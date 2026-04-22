@@ -41,7 +41,7 @@ from isaaclab.app import AppLauncher
 
 parser = argparse.ArgumentParser(description="UR5e pure-scripted pick-and-lift demo.")
 parser.add_argument("--task", type=str,
-                    default="OmniReset-Ur5eRobotiq2f85-RelCartesianOSC-State-Play-v0",
+                    default="OmniReset-Ur5eRobotiq2f140-RelCartesianOSC-State-Play-v0",
                     help="Registered gym task ID.")
 parser.add_argument("--num_envs", type=int, default=1, help="Number of parallel environments.")
 parser.add_argument("--num_episodes", type=int, default=3, help="Total number of episodes to run.")
