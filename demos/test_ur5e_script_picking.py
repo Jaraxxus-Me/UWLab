@@ -48,7 +48,7 @@ parser.add_argument("--num_episodes", type=int, default=3, help="Total number of
 parser.add_argument("--max_steps", type=int, default=400, help="Max policy steps per episode.")
 parser.add_argument("--pos_threshold", type=float, default=0.05,
                     help="Position error (m) threshold to consider a goal reached.")
-parser.add_argument("--rot_threshold", type=float, default=0.1,
+parser.add_argument("--rot_threshold", type=float, default=0.12,
                     help="Orientation error (rad) threshold to consider a goal reached.")
 parser.add_argument("--max_approach_steps", type=int, default=150,
                     help="Force transition from approach to pre-grasp after this many steps, "
@@ -59,7 +59,7 @@ parser.add_argument("--max_pre_grasp_steps", type=int, default=80,
 parser.add_argument("--approach_wrist_offset", type=float, default=0.25,
                     help="Wrist_3 Z hover offset above cube for initial approach (m). "
                          "Higher than grasp_wrist_offset to clear the object.")
-parser.add_argument("--grasp_wrist_offset", type=float, default=0.15,
+parser.add_argument("--grasp_wrist_offset", type=float, default=0.22,
                     help="Wrist_3 Z offset above cube center at pre-grasp/grasp (m). "
                          "Roughly the gripper TCP length so fingers straddle the object.")
 parser.add_argument("--lift_height", type=float, default=0.15,
@@ -228,7 +228,7 @@ def main(env_cfg: ManagerBasedRLEnvCfg, agent_cfg: RslRlBaseRunnerCfg):
 
     # OSC scale from the env's action cfg. Hardcoded to match ``UR5E_ROBOTIQ_*_RELATIVE_OSC``
     # in actions.py (the Play/Eval cfg uses the soft Kp variant with this scale).
-    action_scale = torch.tensor([0.02, 0.02, 0.02, 0.02, 0.02, 0.2])
+    action_scale = torch.tensor([0.1, 0.1, 0.1, 0.5, 0.5, 0.5])
 
     # Top-down grasp orientation in the robot base frame: wrist X-axis points down,
     # so the gripper fingers extend downward and close horizontally, parallel to
