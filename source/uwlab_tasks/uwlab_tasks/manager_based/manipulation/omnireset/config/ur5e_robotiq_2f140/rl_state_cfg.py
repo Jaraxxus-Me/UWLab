@@ -231,20 +231,53 @@ class BaseEventCfg:
     reset_everything = EventTerm(func=task_mdp.reset_scene_to_default, mode="reset", params={})
 
 
+# The OmniReset reset-states datasets on the cloud were recorded on the 2F-85
+# articulation (12 DOFs). The 2F-140 articulation exposes 14 DOFs (two extra
+# ``*_inner_finger_pad_joint`` entries at the end). We reuse the 2F-85 datasets
+# via ``MultiResetManagerPadded``, which zero-pads the trailing DOFs so they
+# fall back to the default joint position. The arm joints (DOF 0..5) map 1:1;
+# the gripper DOFs (6..11) are set to the 2F-85 recorded values (approximate
+# for 2F-140 since the finger-linkage topology differs slightly).
+_TARGET_JOINT_DOFS_2F140 = 14
+
+
 @configclass
 class TrainEventCfg(BaseEventCfg):
-    """Training events: material/mass randomization + 4-path resets. No sysid or OSC gain randomization.
+    """Training events: material/mass randomization + 4-path resets (2F-85 datasets, zero-padded)."""
 
-    Note: the OmniReset reset-states datasets on the cloud were recorded against the
-    2F-85 articulation (12 DOFs). The 2F-140 articulation has 14 DOFs, so those datasets
-    cannot be applied as-is. We fall back to the default ``reset_everything`` (default
-    articulation init state) until 2F-140-specific reset states are recorded.
-    """
+    reset_from_reset_states = EventTerm(
+        func=task_mdp.MultiResetManagerPadded,
+        mode="reset",
+        params={
+            "dataset_dir": f"{UWLAB_CLOUD_ASSETS_DIR}/Datasets/OmniReset",
+            "reset_types": [
+                "ObjectAnywhereEEAnywhere",
+                "ObjectRestingEEGrasped",
+                "ObjectAnywhereEEGrasped",
+                "ObjectPartiallyAssembledEEGrasped",
+            ],
+            "probs": [0.25, 0.25, 0.25, 0.25],
+            "success": "env.reward_manager.get_term_cfg('progress_context').func.success",
+            "target_joint_dofs": _TARGET_JOINT_DOFS_2F140,
+        },
+    )
 
 
 @configclass
 class TrainEvalEventCfg(BaseEventCfg):
-    """Eval after Stage 1: no sysid/OSC gain randomization. Falls back to default reset (see TrainEventCfg)."""
+    """Eval after Stage 1: 1-path resets from 2F-85 datasets, zero-padded to 14 DOFs."""
+
+    reset_from_reset_states = EventTerm(
+        func=task_mdp.MultiResetManagerPadded,
+        mode="reset",
+        params={
+            "dataset_dir": f"{UWLAB_CLOUD_ASSETS_DIR}/Datasets/OmniReset",
+            "reset_types": ["ObjectAnywhereEEAnywhere"],
+            "probs": [1.0],
+            "success": "env.reward_manager.get_term_cfg('progress_context').func.success",
+            "target_joint_dofs": _TARGET_JOINT_DOFS_2F140,
+        },
+    )
 
 
 @configclass
@@ -276,6 +309,18 @@ class FinetuneEvalEventCfg(BaseEventCfg):
         params={
             "action_name": "arm",
             "scale_range": (0.8, 1.2),
+        },
+    )
+
+    reset_from_reset_states = EventTerm(
+        func=task_mdp.MultiResetManagerPadded,
+        mode="reset",
+        params={
+            "dataset_dir": f"{UWLAB_CLOUD_ASSETS_DIR}/Datasets/OmniReset",
+            "reset_types": ["ObjectAnywhereEEAnywhere"],
+            "probs": [1.0],
+            "success": "env.reward_manager.get_term_cfg('progress_context').func.success",
+            "target_joint_dofs": _TARGET_JOINT_DOFS_2F140,
         },
     )
 

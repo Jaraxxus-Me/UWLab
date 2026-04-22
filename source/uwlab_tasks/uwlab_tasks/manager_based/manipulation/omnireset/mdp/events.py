@@ -1167,6 +1167,51 @@ class MultiResetManager(ManagerTermBase):
         self._env.scene.write_data_to_sim()
 
 
+class MultiResetManagerPadded(MultiResetManager):
+    """Variant of :class:`MultiResetManager` that zero-pads the robot articulation's
+    ``joint_position`` / ``joint_velocity`` tensors to a target DOF count.
+
+    Use this when reusing a reset-states dataset that was recorded on an articulation
+    with fewer DOFs than the current one (e.g. reusing the 2F-85 datasets on the 2F-140,
+    which has two extra ``*_inner_finger_pad_joint`` DOFs). The extra DOF slots are
+    filled with zeros so they fall back to the articulation's default joint position.
+
+    Additional params (in addition to :class:`MultiResetManager` params):
+        target_joint_dofs: Target DOF count. Padding is skipped if the dataset already
+            has at least this many DOFs.
+    """
+
+    def __init__(self, cfg: EventTermCfg, env: ManagerBasedEnv):
+        super().__init__(cfg, env)
+        target_dofs = int(cfg.params.get("target_joint_dofs", 0))
+        if target_dofs <= 0:
+            return
+        for ds in self.datasets:
+            robot_state = ds.get("initial_state", {}).get("articulation", {}).get("robot")
+            if robot_state is None:
+                continue
+            for key in ("joint_position", "joint_velocity"):
+                t = robot_state.get(key)
+                if t is None:
+                    continue
+                if t.dim() != 2 or t.shape[1] >= target_dofs:
+                    continue
+                pad = torch.zeros(t.shape[0], target_dofs - t.shape[1], device=t.device, dtype=t.dtype)
+                robot_state[key] = torch.cat([t, pad], dim=1)
+
+    def __call__(
+        self,
+        env: ManagerBasedEnv,
+        env_ids: torch.Tensor,
+        dataset_dir: str,
+        reset_types: list[str],
+        probs: list[float],
+        success: str | None = None,
+        target_joint_dofs: int = 0,
+    ) -> None:
+        super().__call__(env, env_ids, dataset_dir, reset_types, probs, success)
+
+
 def sample_state_data_set(episode_data: dict, idx: torch.Tensor, device: torch.device) -> dict:
     """Sample state from episode data and move tensors to device in one pass."""
     result = {}
