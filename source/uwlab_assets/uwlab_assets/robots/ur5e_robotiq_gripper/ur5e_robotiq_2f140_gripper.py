@@ -86,7 +86,7 @@ UR5E_ROBOTIQ_2F140_ARTICULATION = ArticulationCfg(
 _GRIPPER_ACTUATOR = ImplicitActuatorCfg(
     joint_names_expr=["finger_joint"],
     stiffness=17,
-    damping=5,
+    damping=10,
     effort_limit_sim=60,
 )
 

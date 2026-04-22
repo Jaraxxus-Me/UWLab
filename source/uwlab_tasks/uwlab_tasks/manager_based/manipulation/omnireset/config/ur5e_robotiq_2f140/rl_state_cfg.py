@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import os
 from dataclasses import MISSING
 
 import isaaclab.sim as sim_utils
@@ -30,6 +31,14 @@ from uwlab_tasks.manager_based.manipulation.omnireset.config.ur5e_robotiq_2f140.
 )
 
 from ... import mdp as task_mdp
+
+# Gripper joints in OmniReset datasets were recorded on a 2F-85 gripper. Indices 10-11
+# of the recorded qpos land on different physical joints on a 2F-140 articulation
+# (*_inner_finger_pad_joint vs *_inner_finger_knuckle_joint), and the finger kinematics
+# differ. demos/make_2f140_reset_dataset.py produces a corrected copy under the path
+# below, with gripper joints zeroed to the 2F-140 open pose. Safe for non-grasped reset
+# types only.
+OMNIRESET_2F140_DATASET_DIR = os.path.expanduser("~/.cache/uwlab/assets/Datasets/OmniReset2f140")
 
 
 @configclass
@@ -262,13 +271,13 @@ class TrainEventCfg(BaseEventCfg):
 
 @configclass
 class TrainEvalEventCfg(BaseEventCfg):
-    """Eval after Stage 1: 1-path resets from 2F-85 datasets."""
+    """Eval after Stage 1: 1-path resets from 2F-140-corrected datasets (gripper zeroed)."""
 
     reset_from_reset_states = EventTerm(
         func=task_mdp.MultiResetManager,
         mode="reset",
         params={
-            "dataset_dir": f"{UWLAB_CLOUD_ASSETS_DIR}/Datasets/OmniReset",
+            "dataset_dir": OMNIRESET_2F140_DATASET_DIR,
             "reset_types": ["ObjectAnywhereEEAnywhere"],
             "probs": [1.0],
             "success": "env.reward_manager.get_term_cfg('progress_context').func.success",
@@ -312,7 +321,7 @@ class FinetuneEvalEventCfg(BaseEventCfg):
         func=task_mdp.MultiResetManager,
         mode="reset",
         params={
-            "dataset_dir": f"{UWLAB_CLOUD_ASSETS_DIR}/Datasets/OmniReset",
+            "dataset_dir": OMNIRESET_2F140_DATASET_DIR,
             "reset_types": ["ObjectAnywhereEEAnywhere"],
             "probs": [1.0],
             "success": "env.reward_manager.get_term_cfg('progress_context').func.success",
