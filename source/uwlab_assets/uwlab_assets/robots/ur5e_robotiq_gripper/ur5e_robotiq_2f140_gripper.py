@@ -25,18 +25,16 @@ from isaaclab.assets.articulation import ArticulationCfg
 
 _USD_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "usd", "ur5e_robotiq2f140.usd")
 
-# 2F-140 has a different finger-linkage topology than 2F-85: mimic joints
-# are named ``*_inner_finger_pad_joint`` rather than ``*_inner_finger_knuckle_joint``,
-# and the outer finger joints are revolute (not fixed). The inner-knuckle joints
-# are collapsed as mimic constraints in the physics-edit USD and do not appear as
-# independent articulation DOFs, so they are omitted here.
+# After patching the 2F-140 USD to match the 2F-85 closed-chain modeling pattern:
+# - ``*_outer_finger_joint`` converted from revolute to fixed
+# - ``*_inner_finger_joint`` excluded from articulation (breaks the kinematic loop)
+# - ``*_inner_knuckle_joint`` and ``*_inner_finger_pad_joint`` carry mimic constraints
+# This gives 6 gripper DOFs in the articulation, matching 2F-85's count.
 ROBOTIQ_2F140_DEFAULT_JOINT_POS = {
     "finger_joint": 0.0,
     "right_outer_knuckle_joint": 0.0,
-    "left_outer_finger_joint": 0.0,
-    "right_outer_finger_joint": 0.0,
-    "left_inner_finger_joint": 0.0,
-    "right_inner_finger_joint": 0.0,
+    "left_inner_knuckle_joint": 0.0,
+    "right_inner_knuckle_joint": 0.0,
     "left_inner_finger_pad_joint": 0.0,
     "right_inner_finger_pad_joint": 0.0,
 }

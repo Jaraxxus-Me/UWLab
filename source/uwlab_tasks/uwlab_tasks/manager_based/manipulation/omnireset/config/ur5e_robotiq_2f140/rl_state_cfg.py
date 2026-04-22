@@ -231,22 +231,20 @@ class BaseEventCfg:
     reset_everything = EventTerm(func=task_mdp.reset_scene_to_default, mode="reset", params={})
 
 
-# The OmniReset reset-states datasets on the cloud were recorded on the 2F-85
-# articulation (12 DOFs). The 2F-140 articulation exposes 14 DOFs (two extra
-# ``*_inner_finger_pad_joint`` entries at the end). We reuse the 2F-85 datasets
-# via ``MultiResetManagerPadded``, which zero-pads the trailing DOFs so they
-# fall back to the default joint position. The arm joints (DOF 0..5) map 1:1;
-# the gripper DOFs (6..11) are set to the 2F-85 recorded values (approximate
-# for 2F-140 since the finger-linkage topology differs slightly).
-_TARGET_JOINT_DOFS_2F140 = 14
+# After patching the 2F-140 USD to match the 2F-85 closed-chain modeling pattern,
+# the articulation exposes 12 DOFs (6 arm + 6 gripper), the same count as the
+# 2F-85 articulation. We can therefore apply the OmniReset cloud datasets (recorded
+# on 2F-85) directly without padding. The 2F-140 gripper DOFs at indices 10-11 are
+# ``*_inner_finger_pad_joint`` instead of 2F-85's ``*_inner_finger_knuckle_joint``,
+# but both serve the same mimic role so the recorded values translate sensibly.
 
 
 @configclass
 class TrainEventCfg(BaseEventCfg):
-    """Training events: material/mass randomization + 4-path resets (2F-85 datasets, zero-padded)."""
+    """Training events: material/mass randomization + 4-path resets (2F-85 datasets)."""
 
     reset_from_reset_states = EventTerm(
-        func=task_mdp.MultiResetManagerPadded,
+        func=task_mdp.MultiResetManager,
         mode="reset",
         params={
             "dataset_dir": f"{UWLAB_CLOUD_ASSETS_DIR}/Datasets/OmniReset",
@@ -258,24 +256,22 @@ class TrainEventCfg(BaseEventCfg):
             ],
             "probs": [0.25, 0.25, 0.25, 0.25],
             "success": "env.reward_manager.get_term_cfg('progress_context').func.success",
-            "target_joint_dofs": _TARGET_JOINT_DOFS_2F140,
         },
     )
 
 
 @configclass
 class TrainEvalEventCfg(BaseEventCfg):
-    """Eval after Stage 1: 1-path resets from 2F-85 datasets, zero-padded to 14 DOFs."""
+    """Eval after Stage 1: 1-path resets from 2F-85 datasets."""
 
     reset_from_reset_states = EventTerm(
-        func=task_mdp.MultiResetManagerPadded,
+        func=task_mdp.MultiResetManager,
         mode="reset",
         params={
             "dataset_dir": f"{UWLAB_CLOUD_ASSETS_DIR}/Datasets/OmniReset",
             "reset_types": ["ObjectAnywhereEEAnywhere"],
             "probs": [1.0],
             "success": "env.reward_manager.get_term_cfg('progress_context').func.success",
-            "target_joint_dofs": _TARGET_JOINT_DOFS_2F140,
         },
     )
 
@@ -313,14 +309,13 @@ class FinetuneEvalEventCfg(BaseEventCfg):
     )
 
     reset_from_reset_states = EventTerm(
-        func=task_mdp.MultiResetManagerPadded,
+        func=task_mdp.MultiResetManager,
         mode="reset",
         params={
             "dataset_dir": f"{UWLAB_CLOUD_ASSETS_DIR}/Datasets/OmniReset",
             "reset_types": ["ObjectAnywhereEEAnywhere"],
             "probs": [1.0],
             "success": "env.reward_manager.get_term_cfg('progress_context').func.success",
-            "target_joint_dofs": _TARGET_JOINT_DOFS_2F140,
         },
     )
 
@@ -387,10 +382,10 @@ _OBS_JOINT_NAMES_2F140 = [
     "wrist_3_joint",
     "finger_joint",
     "right_outer_knuckle_joint",
-    "left_outer_finger_joint",
-    "right_outer_finger_joint",
-    "left_inner_finger_joint",
-    "right_inner_finger_joint",
+    "left_inner_knuckle_joint",
+    "right_inner_knuckle_joint",
+    "left_inner_finger_pad_joint",
+    "right_inner_finger_pad_joint",
 ]
 
 # 16-body subset matching the 2F-85 articulation body count. The 2F-140
