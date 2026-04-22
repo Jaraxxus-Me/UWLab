@@ -41,7 +41,7 @@ from isaaclab.app import AppLauncher
 
 parser = argparse.ArgumentParser(description="UR5e pre-trained policy evaluation.")
 parser.add_argument("--task", type=str,
-                    default="OmniReset-Ur5eRobotiq2f85-RelCartesianOSC-State-Play-v0",
+                    default="OmniReset-Ur5eRobotiq2f140-RelCartesianOSC-State-Play-v0",
                     help="Registered gym task ID.")
 parser.add_argument("--checkpoint", type=str, required=True, help="Path to the .pt checkpoint file.")
 parser.add_argument("--num_envs", type=int, default=1, help="Number of parallel environments.")

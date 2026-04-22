@@ -5,3 +5,4 @@
 from .actions import *
 from .kinematics import *
 from .ur5e_robotiq_2f85_gripper import *
+from .ur5e_robotiq_2f140_gripper import *

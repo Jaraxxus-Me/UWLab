@@ -152,7 +152,10 @@ def get_material_properties(
     asset_cfg: SceneEntityCfg,
 ):
     asset: RigidObject | Articulation = env.scene[asset_cfg.name]
-    return asset.root_physx_view.get_material_properties().view(env.num_envs, -1)
+    mat = asset.root_physx_view.get_material_properties()
+    if asset_cfg.body_ids is not None and not isinstance(asset_cfg.body_ids, slice):
+        mat = mat[:, asset_cfg.body_ids]
+    return mat.view(env.num_envs, -1)
 
 
 def get_mass(
@@ -160,7 +163,10 @@ def get_mass(
     asset_cfg: SceneEntityCfg,
 ):
     asset: RigidObject | Articulation = env.scene[asset_cfg.name]
-    return asset.root_physx_view.get_masses().view(env.num_envs, -1)
+    masses = asset.root_physx_view.get_masses()
+    if asset_cfg.body_ids is not None and not isinstance(asset_cfg.body_ids, slice):
+        masses = masses[:, asset_cfg.body_ids]
+    return masses.view(env.num_envs, -1)
 
 
 def get_joint_friction(
@@ -168,7 +174,7 @@ def get_joint_friction(
     asset_cfg: SceneEntityCfg,
 ):
     asset: RigidObject | Articulation = env.scene[asset_cfg.name]
-    return asset.data.joint_friction_coeff.view(env.num_envs, -1)
+    return asset.data.joint_friction_coeff[:, asset_cfg.joint_ids].view(env.num_envs, -1)
 
 
 def get_joint_armature(
@@ -176,7 +182,7 @@ def get_joint_armature(
     asset_cfg: SceneEntityCfg,
 ):
     asset: RigidObject | Articulation = env.scene[asset_cfg.name]
-    return asset.data.joint_armature.view(env.num_envs, -1)
+    return asset.data.joint_armature[:, asset_cfg.joint_ids].view(env.num_envs, -1)
 
 
 def get_joint_stiffness(
@@ -184,7 +190,7 @@ def get_joint_stiffness(
     asset_cfg: SceneEntityCfg,
 ):
     asset: RigidObject | Articulation = env.scene[asset_cfg.name]
-    return asset.data.joint_stiffness.view(env.num_envs, -1)
+    return asset.data.joint_stiffness[:, asset_cfg.joint_ids].view(env.num_envs, -1)
 
 
 def get_joint_damping(
@@ -192,7 +198,7 @@ def get_joint_damping(
     asset_cfg: SceneEntityCfg,
 ):
     asset: RigidObject | Articulation = env.scene[asset_cfg.name]
-    return asset.data.joint_damping.view(env.num_envs, -1)
+    return asset.data.joint_damping[:, asset_cfg.joint_ids].view(env.num_envs, -1)
 
 
 def time_left(env) -> torch.Tensor:
