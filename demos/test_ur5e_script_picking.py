@@ -41,7 +41,7 @@ from isaaclab.app import AppLauncher
 
 parser = argparse.ArgumentParser(description="UR5e pure-scripted pick-and-lift demo.")
 parser.add_argument("--task", type=str,
-                    default="OmniReset-Ur5eRobotiq2f140-RelCartesianOSC-State-Play-v0",
+                    default="OmniReset-Ur5eRobotiq2f85-RelCartesianOSC-State-Play-v0",
                     help="Registered gym task ID.")
 parser.add_argument("--num_envs", type=int, default=1, help="Number of parallel environments.")
 parser.add_argument("--num_episodes", type=int, default=3, help="Total number of episodes to run.")
@@ -228,7 +228,7 @@ def main(env_cfg: ManagerBasedRLEnvCfg, agent_cfg: RslRlBaseRunnerCfg):
 
     # OSC scale from the env's action cfg. Hardcoded to match ``UR5E_ROBOTIQ_*_RELATIVE_OSC``
     # in actions.py (the Play/Eval cfg uses the soft Kp variant with this scale).
-    action_scale = torch.tensor([0.1, 0.1, 0.1, 0.5, 0.5, 0.5])
+    action_scale = torch.tensor([0.02, 0.02, 0.02, 0.02, 0.02, 0.2])
 
     # Top-down grasp orientation in the robot base frame: wrist X-axis points down,
     # so the gripper fingers extend downward and close horizontally, parallel to
