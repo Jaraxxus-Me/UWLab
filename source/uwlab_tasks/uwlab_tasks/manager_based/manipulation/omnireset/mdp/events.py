@@ -1275,7 +1275,9 @@ class reset_root_states_uniform(ManagerTermBase):
         )
         self.asset_cfgs = list(cfg.params.get("asset_cfgs", dict()).values())
         self.offset_asset_cfg = cfg.params.get("offset_asset_cfg")
+        self.offset_use_current_pose = cfg.params.get("offset_use_current_pose", False)
         self.use_bottom_offset = cfg.params.get("use_bottom_offset", False)
+        self.xy_annulus_range = cfg.params.get("xy_annulus_range", None)
 
         if self.use_bottom_offset:
             self.bottom_offset_positions = dict()
@@ -1302,12 +1304,22 @@ class reset_root_states_uniform(ManagerTermBase):
         velocity_range: dict[str, tuple[float, float]],
         asset_cfgs: dict[str, SceneEntityCfg] = dict(),
         offset_asset_cfg: SceneEntityCfg = None,
+        offset_use_current_pose: bool = False,
         use_bottom_offset: bool = False,
+        xy_annulus_range: tuple[float, float] | None = None,
     ) -> None:
         # poses
         rand_pose_samples = math_utils.sample_uniform(
             self.pose_range[:, 0], self.pose_range[:, 1], (len(env_ids), 6), device=env.device
         )
+
+        # Override x/y with annular sampling (r in [r_min, r_max], theta in [0, 2pi))
+        if self.xy_annulus_range is not None:
+            r_min, r_max = self.xy_annulus_range
+            r = math_utils.sample_uniform(r_min, r_max, (len(env_ids),), device=env.device)
+            theta = math_utils.sample_uniform(0.0, 2.0 * float(np.pi), (len(env_ids),), device=env.device)
+            rand_pose_samples[:, 0] = r * torch.cos(theta)
+            rand_pose_samples[:, 1] = r * torch.sin(theta)
 
         # Create orientation delta quaternion from the random Euler angles
         orientations_delta = math_utils.quat_from_euler_xyz(
@@ -1326,13 +1338,19 @@ class reset_root_states_uniform(ManagerTermBase):
             # Get default root state for this asset
             root_states = asset.data.default_root_state[env_ids].clone()
 
-            # Apply position offset
-            positions = root_states[:, 0:3] + env.scene.env_origins[env_ids] + rand_pose_samples[:, 0:3]
+            # Apply position offset (anchor + random delta)
+            positions = root_states[:, 0:3] + rand_pose_samples[:, 0:3]
 
             if self.offset_asset_cfg:
                 offset_asset: RigidObject | Articulation = env.scene[self.offset_asset_cfg.name]
-                offset_positions = offset_asset.data.default_root_state[env_ids].clone()
-                positions += offset_positions[:, 0:3]
+                if self.offset_use_current_pose:
+                    # Runtime world pose already bakes in env_origins — don't add them twice.
+                    positions += offset_asset.data.root_pos_w[env_ids]
+                else:
+                    positions += env.scene.env_origins[env_ids]
+                    positions += offset_asset.data.default_root_state[env_ids, 0:3]
+            else:
+                positions += env.scene.env_origins[env_ids]
 
             if self.use_bottom_offset:
                 bottom_offset_position = self.bottom_offset_positions[asset_cfg.name]

@@ -173,8 +173,8 @@ class ResetStatesBaseEventCfg:
         mode="reset",
         params={
             "pose_range": {
-                "x": (0.3, 0.55),
-                "y": (-0.1, 0.3),
+                "x": (0.5, 0.6),
+                "y": (-0.1, 0.1),
                 "z": (0.0, 0.0),
                 "roll": (0.0, 0.0),
                 "pitch": (0.0, 0.0),
@@ -195,8 +195,9 @@ class ObjectAnywhereEEAnywhereEventCfg(ResetStatesBaseEventCfg):
         mode="reset",
         params={
             "pose_range": {
-                "x": (0.3, 0.55),
-                "y": (-0.1, 0.5),
+                # x, y are overridden by xy_annulus_range below.
+                "x": (0.0, 0.0),
+                "y": (0.0, 0.0),
                 "z": (0.0, 0.3),
                 "roll": (-np.pi, np.pi),
                 "pitch": (-np.pi, np.pi),
@@ -204,7 +205,9 @@ class ObjectAnywhereEEAnywhereEventCfg(ResetStatesBaseEventCfg):
             },
             "velocity_range": {},
             "asset_cfgs": {"insertive_object": SceneEntityCfg("insertive_object")},
-            "offset_asset_cfg": SceneEntityCfg("ur5_metal_support"),
+            "offset_asset_cfg": SceneEntityCfg("receptive_object"),
+            "offset_use_current_pose": True,
+            "xy_annulus_range": (0.05, 0.10),
             "use_bottom_offset": True,
         },
     )
@@ -213,11 +216,11 @@ class ObjectAnywhereEEAnywhereEventCfg(ResetStatesBaseEventCfg):
         func=task_mdp.reset_end_effector_round_fixed_asset,
         mode="reset",
         params={
-            "fixed_asset_cfg": SceneEntityCfg("robot"),
+            "fixed_asset_cfg": SceneEntityCfg("receptive_object"),
             "fixed_asset_offset": None,
             "pose_range_b": {
-                "x": (0.3, 0.7),
-                "y": (-0.4, 0.4),
+                "x": (-0.16, 0.16),
+                "y": (-0.16, 0.16),
                 "z": (0.0, 0.5),
                 "roll": (0.0, 0.0),
                 "pitch": (np.pi / 4, 3 * np.pi / 4),
@@ -271,8 +274,9 @@ class ObjectAnywhereEEGraspedEventCfg(ResetStatesBaseEventCfg):
         mode="reset",
         params={
             "pose_range": {
-                "x": (0.3, 0.55),
-                "y": (-0.1, 0.3),
+                # x, y are overridden by xy_annulus_range below.
+                "x": (0.0, 0.0),
+                "y": (0.0, 0.0),
                 "z": (0.0, 0.3),
                 "roll": (-np.pi, np.pi),
                 "pitch": (-np.pi, np.pi),
@@ -280,7 +284,9 @@ class ObjectAnywhereEEGraspedEventCfg(ResetStatesBaseEventCfg):
             },
             "velocity_range": {},
             "asset_cfgs": {"insertive_object": SceneEntityCfg("insertive_object")},
-            "offset_asset_cfg": SceneEntityCfg("ur5_metal_support"),
+            "offset_asset_cfg": SceneEntityCfg("receptive_object"),
+            "offset_use_current_pose": True,
+            "xy_annulus_range": (0.05, 0.10),
             "use_bottom_offset": True,
         },
     )
