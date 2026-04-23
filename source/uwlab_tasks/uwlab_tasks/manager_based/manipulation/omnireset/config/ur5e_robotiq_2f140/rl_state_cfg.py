@@ -772,10 +772,10 @@ class Ur5eRobotiq2f140RlStateCfg(ManagerBasedRLEnvCfg):
     variants = variants
 
     def __post_init__(self):
-        self.decimation = 72
+        self.decimation = 60
         self.episode_length_s = 16.0
         # simulation settings
-        self.sim.dt = 1 / 720.0
+        self.sim.dt = 1 / 600.0
 
         # Contact and solver settings
         self.sim.physx.solver_type = 1
