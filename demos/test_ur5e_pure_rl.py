@@ -26,7 +26,7 @@ Usage (activate the project venv first):
 
     # Headless
     python demos/test_ur5e_pure_rl.py \
-        --checkpoint cube_state_rl_expert_seed42.pt \
+        --checkpoint block_box_rl_expert.pt \
         --num_envs 4 --num_episodes 20 --max_steps 200 \
         env.scene.insertive_object=block \
         env.scene.receptive_object=box \
