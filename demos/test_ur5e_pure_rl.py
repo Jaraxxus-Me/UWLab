@@ -25,11 +25,12 @@ Usage (activate the project venv first):
         env.scene.receptive_object=peghole
 
     # Headless
-    python demos/test_ur5e_pure_rl.py \\
-        --checkpoint rectangle_state_rl_expert_seed0.pt --headless \\
-        --num_envs 4 --num_episodes 20 --max_steps 200 \\
-        env.scene.insertive_object=rectangle \\
-        env.scene.receptive_object=wall
+    python demos/test_ur5e_pure_rl.py \
+        --checkpoint cube_state_rl_expert_seed42.pt \
+        --num_envs 4 --num_episodes 20 --max_steps 200 \
+        env.scene.insertive_object=block \
+        env.scene.receptive_object=box \
+        env.events.reset_from_reset_states.params.dataset_dir=./Datasets/OmniReset
 """
 
 """Launch Isaac Sim Simulator first."""
@@ -41,7 +42,7 @@ from isaaclab.app import AppLauncher
 
 parser = argparse.ArgumentParser(description="UR5e pre-trained policy evaluation.")
 parser.add_argument("--task", type=str,
-                    default="OmniReset-Ur5eRobotiq2f140-RelCartesianOSC-State-Play-v0",
+                    default="OmniReset-Ur5eRobotiq2f85-RelCartesianOSC-State-Play-v0",
                     help="Registered gym task ID.")
 parser.add_argument("--checkpoint", type=str, required=True, help="Path to the .pt checkpoint file.")
 parser.add_argument("--num_envs", type=int, default=1, help="Number of parallel environments.")
@@ -79,10 +80,26 @@ from isaaclab_rl.rsl_rl import RslRlBaseRunnerCfg, RslRlVecEnvWrapper
 import importlib.metadata as metadata
 import inspect
 
+from isaaclab.managers import ManagerTermBase
+
 import isaaclab_tasks  # noqa: F401  — registers Isaac Lab gym envs
 import uwlab_tasks  # noqa: F401  — registers UW Lab gym envs
 from isaaclab_rl.rsl_rl import handle_deprecated_rsl_rl_cfg
 from uwlab_tasks.utils.hydra import hydra_task_config
+
+
+def force_init_event_term_classes(env) -> None:
+    """Instantiate any class-based ``ManagerTermBase`` event terms up front.
+
+    The ``EventManager`` defers class-term construction to a timeline PLAY callback
+    that can silently fail — when it does, ``term_cfg.func`` is still the class and
+    the next apply call hits ``__init__`` with the param kwargs (e.g. ``dataset_dir``)
+    instead of ``__call__``, raising ``TypeError``.
+    """
+    for mode_cfgs in env.event_manager._mode_term_cfgs.values():
+        for tc in mode_cfgs:
+            if inspect.isclass(tc.func) and issubclass(tc.func, ManagerTermBase):
+                tc.func = tc.func(cfg=tc, env=env)
 
 
 def sanitize_rsl_rl_cfg(agent_cfg: RslRlBaseRunnerCfg) -> RslRlBaseRunnerCfg:
@@ -118,6 +135,7 @@ def main(env_cfg: ManagerBasedRLEnvCfg, agent_cfg: RslRlBaseRunnerCfg):
     # 2. Create environment + RSL-RL wrapper
     # ------------------------------------------------------------------
     env = gym.make(args_cli.task, cfg=env_cfg)
+    force_init_event_term_classes(env.unwrapped)
     env = RslRlVecEnvWrapper(env, clip_actions=agent_cfg.clip_actions)
 
     num_envs = env.num_envs
