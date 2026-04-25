@@ -1212,6 +1212,55 @@ class MultiResetManagerPadded(MultiResetManager):
         super().__call__(env, env_ids, dataset_dir, reset_types, probs, success)
 
 
+class MultiResetManagerResized(MultiResetManager):
+    """Resize dataset robot joint tensors to the live robot articulation DOF count.
+
+    OmniReset reset-state datasets include the UR5e arm first, followed by gripper
+    DOFs. Arm-only debug assets expose only the first 6 arm DOFs, so their reset
+    manager must keep the object/root states but trim robot joint tensors before
+    writing them to simulation.
+
+    Additional params (in addition to :class:`MultiResetManager` params):
+        target_joint_dofs: Target DOF count. If omitted or <= 0, uses the live
+            ``robot`` articulation joint count.
+    """
+
+    def __init__(self, cfg: EventTermCfg, env: ManagerBasedEnv):
+        super().__init__(cfg, env)
+        target_dofs = int(cfg.params.get("target_joint_dofs", 0))
+        if target_dofs <= 0:
+            robot: Articulation = env.scene["robot"]
+            target_dofs = robot.data.default_joint_pos.shape[1]
+        if target_dofs <= 0:
+            return
+
+        for ds in self.datasets:
+            robot_state = ds.get("initial_state", {}).get("articulation", {}).get("robot")
+            if robot_state is None:
+                continue
+            for key in ("joint_position", "joint_velocity"):
+                t = robot_state.get(key)
+                if t is None or t.dim() != 2 or t.shape[1] == target_dofs:
+                    continue
+                if t.shape[1] > target_dofs:
+                    robot_state[key] = t[:, :target_dofs]
+                else:
+                    pad = torch.zeros(t.shape[0], target_dofs - t.shape[1], device=t.device, dtype=t.dtype)
+                    robot_state[key] = torch.cat([t, pad], dim=1)
+
+    def __call__(
+        self,
+        env: ManagerBasedEnv,
+        env_ids: torch.Tensor,
+        dataset_dir: str,
+        reset_types: list[str],
+        probs: list[float],
+        success: str | None = None,
+        target_joint_dofs: int = 0,
+    ) -> None:
+        super().__call__(env, env_ids, dataset_dir, reset_types, probs, success)
+
+
 def sample_state_data_set(episode_data: dict, idx: torch.Tensor, device: torch.device) -> dict:
     """Sample state from episode data and move tensors to device in one pass."""
     result = {}

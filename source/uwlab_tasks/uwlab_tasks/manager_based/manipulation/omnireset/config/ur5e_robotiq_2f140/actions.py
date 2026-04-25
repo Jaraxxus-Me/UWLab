@@ -44,6 +44,21 @@ UR5E_ROBOTIQ_2F140_RELATIVE_OSC_UNSCALED = RelCartesianOSCActionCfg(
     torque_limit=(150.0, 150.0, 150.0, 28.0, 28.0, 28.0),
 )
 
+UR5E_ROBOTIQ_2F140_ARM_ONLY_RELATIVE_OSC = UR5E_ROBOTIQ_2F140_RELATIVE_OSC.replace(
+    use_task_space_inertia=True,
+    task_space_inertia_damping=1e-4,
+)
+
+UR5E_ROBOTIQ_2F140_ARM_ONLY_RELATIVE_OSC_EVAL = UR5E_ROBOTIQ_2F140_RELATIVE_OSC_EVAL.replace(
+    use_task_space_inertia=True,
+    task_space_inertia_damping=1e-4,
+)
+
+UR5E_ROBOTIQ_2F140_ARM_ONLY_RELATIVE_OSC_UNSCALED = UR5E_ROBOTIQ_2F140_RELATIVE_OSC_UNSCALED.replace(
+    use_task_space_inertia=True,
+    task_space_inertia_damping=1e-4,
+)
+
 
 @configclass
 class Ur5eRobotiq2f140RelativeOSCAction:
@@ -67,3 +82,24 @@ class Ur5eRobotiq2f140SysidOSCAction:
 
     arm = UR5E_ROBOTIQ_2F140_RELATIVE_OSC_UNSCALED
     gripper = ROBOTIQ_GRIPPER_BINARY_ACTIONS
+
+
+@configclass
+class Ur5eRobotiq2f140ArmOnlyRelativeOSCAction:
+    """Arm-only analytical OSC action for debugging pose reaching without the gripper."""
+
+    arm = UR5E_ROBOTIQ_2F140_ARM_ONLY_RELATIVE_OSC
+
+
+@configclass
+class Ur5eRobotiq2f140ArmOnlyRelativeOSCEvalAction:
+    """Arm-only high-Kp OSC action for debugging pose reaching without the gripper."""
+
+    arm = UR5E_ROBOTIQ_2F140_ARM_ONLY_RELATIVE_OSC_EVAL
+
+
+@configclass
+class Ur5eRobotiq2f140ArmOnlySysidOSCAction:
+    """Arm-only unscaled OSC action for sysid-style debugging."""
+
+    arm = UR5E_ROBOTIQ_2F140_ARM_ONLY_RELATIVE_OSC_UNSCALED

@@ -23,11 +23,17 @@ from isaaclab.utils import configclass
 from isaaclab.utils.assets import ISAAC_NUCLEUS_DIR
 
 from uwlab_assets import UWLAB_CLOUD_ASSETS_DIR
-from uwlab_assets.robots.ur5e_robotiq_gripper import EXPLICIT_UR5E_ROBOTIQ_2F140, IMPLICIT_UR5E_ROBOTIQ_2F140
+from uwlab_assets.robots.ur5e_robotiq_gripper import (
+    EXPLICIT_UR5E_ROBOTIQ_2F140,
+    EXPLICIT_UR5E_ROBOTIQ_2F140_ARM_ONLY,
+    IMPLICIT_UR5E_ROBOTIQ_2F140,
+    IMPLICIT_UR5E_ROBOTIQ_2F140_ARM_ONLY,
+)
 
 from uwlab_tasks.manager_based.manipulation.omnireset.config.ur5e_robotiq_2f140.actions import (
+    Ur5eRobotiq2f140ArmOnlyRelativeOSCAction,
+    Ur5eRobotiq2f140ArmOnlyRelativeOSCEvalAction,
     Ur5eRobotiq2f140RelativeOSCAction,
-    Ur5eRobotiq2f140RelativeOSCEvalAction,
 )
 
 from ... import mdp as task_mdp
@@ -420,6 +426,33 @@ _OBS_BODY_NAMES_2F140 = [
     "right_inner_knuckle",
 ]
 
+_ARM_ONLY_JOINT_NAMES = [
+    "shoulder_pan_joint",
+    "shoulder_lift_joint",
+    "elbow_joint",
+    "wrist_1_joint",
+    "wrist_2_joint",
+    "wrist_3_joint",
+]
+
+_ARM_ONLY_BODY_NAMES = [
+    "base_link",
+    "shoulder_link",
+    "upper_arm_link",
+    "forearm_link",
+    "wrist_1_link",
+    "wrist_2_link",
+    "wrist_3_link",
+]
+
+
+def _arm_only_joint_cfg() -> SceneEntityCfg:
+    return SceneEntityCfg("robot", joint_names=_ARM_ONLY_JOINT_NAMES)
+
+
+def _arm_only_body_cfg() -> SceneEntityCfg:
+    return SceneEntityCfg("robot", body_names=_ARM_ONLY_BODY_NAMES)
+
 
 @configclass
 class ObservationsCfg:
@@ -758,6 +791,36 @@ variants = {
 }
 
 
+def _configure_arm_only_debug(env_cfg: ManagerBasedRLEnvCfg, robot_cfg) -> None:
+    """Switch the RL-state config to the UR5e arm-only debug articulation."""
+
+    env_cfg.scene.robot = robot_cfg.replace(prim_path="{ENV_REGEX_NS}/Robot")
+
+    # The arm-only articulation has 6 joints and 7 rigid bodies. The full 2F-140
+    # observation selectors include gripper joints/bodies that do not exist here.
+    env_cfg.observations.policy.joint_pos.params["asset_cfg"] = _arm_only_joint_cfg()
+    env_cfg.observations.critic.joint_pos.params["asset_cfg"] = _arm_only_joint_cfg()
+    env_cfg.observations.critic.joint_vel.params["asset_cfg"] = _arm_only_joint_cfg()
+    env_cfg.observations.critic.robot_joint_friction.params["asset_cfg"] = _arm_only_joint_cfg()
+    env_cfg.observations.critic.robot_joint_armature.params["asset_cfg"] = _arm_only_joint_cfg()
+    env_cfg.observations.critic.robot_joint_stiffness.params["asset_cfg"] = _arm_only_joint_cfg()
+    env_cfg.observations.critic.robot_joint_damping.params["asset_cfg"] = _arm_only_joint_cfg()
+    env_cfg.observations.critic.robot_material_properties.params["asset_cfg"] = _arm_only_body_cfg()
+    env_cfg.observations.critic.robot_mass.params["asset_cfg"] = _arm_only_body_cfg()
+
+    # Remove gripper randomization, but keep reset-state loading. The resized
+    # reset manager trims the dataset's robot joint tensors to the 6 arm DOFs
+    # while preserving the object poses from the same reset state.
+    if hasattr(env_cfg.events, "randomize_gripper_actuator_parameters"):
+        env_cfg.events.randomize_gripper_actuator_parameters = None
+    if hasattr(env_cfg.events, "reset_from_reset_states"):
+        env_cfg.events.reset_from_reset_states.func = task_mdp.MultiResetManagerResized
+        env_cfg.events.reset_from_reset_states.params["target_joint_dofs"] = len(_ARM_ONLY_JOINT_NAMES)
+
+    env_cfg.commands.task_command.asset_cfg = SceneEntityCfg("robot")
+    env_cfg.rewards.ee_asset_distance = None
+
+
 @configclass
 class Ur5eRobotiq2f140RlStateCfg(ManagerBasedRLEnvCfg):
     scene: RlStateSceneCfg = RlStateSceneCfg(num_envs=32, env_spacing=1.5)
@@ -823,20 +886,24 @@ class Ur5eRobotiq2f140RelCartesianOSCFinetuneCfg(Ur5eRobotiq2f140RlStateCfg):
 # Evaluation configuration (after Stage 1: implicit actuator, soft gains, no sysid DR)
 @configclass
 class Ur5eRobotiq2f140RelCartesianOSCEvalCfg(Ur5eRobotiq2f140RlStateCfg):
-    """Eval after Stage 1: implicit actuator, soft gains, large action scale, no sysid DR."""
+    """Arm-only eval/debug config: implicit actuator, soft gains, 6D OSC action."""
 
     events: TrainEvalEventCfg = TrainEvalEventCfg()
-    actions: Ur5eRobotiq2f140RelativeOSCAction = Ur5eRobotiq2f140RelativeOSCAction()
+    actions: Ur5eRobotiq2f140ArmOnlyRelativeOSCAction = Ur5eRobotiq2f140ArmOnlyRelativeOSCAction()
+
+    def __post_init__(self):
+        super().__post_init__()
+        _configure_arm_only_debug(self, IMPLICIT_UR5E_ROBOTIQ_2F140_ARM_ONLY)
 
 
 # Evaluation configuration (after Stage 2: explicit actuator, stiff gains, fixed sysid)
 @configclass
 class Ur5eRobotiq2f140RelCartesianOSCFinetuneEvalCfg(Ur5eRobotiq2f140RlStateCfg):
-    """Eval after Stage 2: explicit actuator, stiff gains, small action scale, fixed sysid + OSC gains."""
+    """Arm-only eval/debug config: explicit actuator, stiff gains, 6D OSC action."""
 
     events: FinetuneEvalEventCfg = FinetuneEvalEventCfg()
-    actions: Ur5eRobotiq2f140RelativeOSCEvalAction = Ur5eRobotiq2f140RelativeOSCEvalAction()
+    actions: Ur5eRobotiq2f140ArmOnlyRelativeOSCEvalAction = Ur5eRobotiq2f140ArmOnlyRelativeOSCEvalAction()
 
     def __post_init__(self):
         super().__post_init__()
-        self.scene.robot = EXPLICIT_UR5E_ROBOTIQ_2F140.replace(prim_path="{ENV_REGEX_NS}/Robot")
+        _configure_arm_only_debug(self, EXPLICIT_UR5E_ROBOTIQ_2F140_ARM_ONLY)
