@@ -1,0 +1,25 @@
+#usda 1.0
+(
+    defaultPrim = "cube"
+    doc = "Blue-sides variant of block.usd. References block.usd and overrides ONLY the 'PreviewSurface' (green) material's diffuseColor. The red top face (PreviewSurfaceFace), all geometry, and all physics data are inherited unchanged, so this block behaves identically in sim to block.usd and only looks different."
+    metersPerUnit = 1
+)
+
+def Xform "cube" (
+    prepend references = @./block.usd@</cube>
+)
+{
+    over "visuals"
+    {
+        over "Looks"
+        {
+            over "PreviewSurface"
+            {
+                over "Principled_BSDF"
+                {
+                    color3f inputs:diffuseColor = (0.1, 0.3, 0.9)
+                }
+            }
+        }
+    }
+}

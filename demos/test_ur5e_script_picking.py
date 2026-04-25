@@ -20,15 +20,15 @@ Works with any Ur5eRobotiq task (2F-85 or 2F-140) since the action space is iden
 
 Usage (activate the project venv first):
     # 2F-85
-    python demos/test_ur5e_script_picking.py \\
-        --task OmniReset-Ur5eRobotiq2f85-RelCartesianOSC-State-Play-v0 \\
-        --num_envs 1 --num_episodes 3 --max_steps 400 \\
+    python demos/test_ur5e_script_picking.py \
+        --task OmniReset-Ur5eRobotiq2f85-RelCartesianOSC-State-Play-v0 \
+        --num_envs 1 --num_episodes 3 --max_steps 400 \
         env.scene.insertive_object=cube env.scene.receptive_object=cube
 
     # 2F-140
-    python demos/test_ur5e_script_picking.py \\
-        --task OmniReset-Ur5eRobotiq2f140-RelCartesianOSC-State-Play-v0 \\
-        --num_envs 1 --num_episodes 3 --max_steps 400 \\
+    python demos/test_ur5e_script_picking.py \
+        --task OmniReset-Ur5eRobotiq2f140-RelCartesianOSC-State-Play-v0 \
+        --num_envs 1 --num_episodes 3 --max_steps 400 \
         env.scene.insertive_object=cube env.scene.receptive_object=cube
 """
 
