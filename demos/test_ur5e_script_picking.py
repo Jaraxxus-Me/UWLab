@@ -66,8 +66,6 @@ parser.add_argument("--lift_height", type=float, default=0.15,
                     help="Distance (m) to lift the object above the grasp pose.")
 parser.add_argument("--close_hold_steps", type=int, default=30,
                     help="Number of steps to hold position while the gripper closes.")
-parser.add_argument("--control_gain", type=float, default=2.0,
-                    help="Proportional gain for the BringToGoal controller.")
 AppLauncher.add_app_launcher_args(parser)
 
 args_cli, hydra_args = parser.parse_known_args()
@@ -154,18 +152,23 @@ def get_object_pos_in_base(env, asset_name: str):
 
 
 class BringToGoal:
-    """Proportional controller in OSC action space that drives the EE toward a goal pose.
+    """Action-following controller in OSC action space that drives the EE toward a goal pose.
 
     Outputs a 6-dim action (scaled delta position + axis-angle), clipped to [-1, 1].
+    No proportional gain — the action IS the per-step delta, so this is straight-line
+    interpolation at the maximum admissible speed until within one step of the goal,
+    at which point the final delta hits the goal exactly:
+
+        action = clamp(pose_error / action_scale, -1, 1)
+
     The goal is given in the robot base (root) frame and can be updated per step via
     :meth:`set_goal`.
     """
 
-    def __init__(self, action_scale: torch.Tensor, num_envs: int, device, gain: float = 0.5):
+    def __init__(self, action_scale: torch.Tensor, num_envs: int, device):
         self.action_scale = action_scale.to(device)
         self.device = device
         self.num_envs = num_envs
-        self.gain = gain
         self.goal_pos = torch.zeros(num_envs, 3, device=device)
         self.goal_quat = torch.zeros(num_envs, 4, device=device)
         self.goal_quat[:, 0] = 1.0  # identity
@@ -187,7 +190,7 @@ class BringToGoal:
         raw = pos_err.new_zeros(pos_err.shape[0], 6)
         raw[:, :3] = pos_err / self.action_scale[:3]
         raw[:, 3:] = rot_err_aa / self.action_scale[3:]
-        arm_actions = (self.gain * raw).clamp(-1.0, 1.0)
+        arm_actions = raw.clamp(-1.0, 1.0)
         return arm_actions, pos_err.norm(dim=-1), rot_err_aa.norm(dim=-1)
 
 
@@ -239,7 +242,7 @@ def main(env_cfg: ManagerBasedRLEnvCfg, agent_cfg: RslRlBaseRunnerCfg):
     ).squeeze(0)
 
     controller = BringToGoal(
-        action_scale=action_scale, num_envs=num_envs, device=device, gain=args_cli.control_gain
+        action_scale=action_scale, num_envs=num_envs, device=device
     )
 
     # Visualization: current EE frame + active goal frame.
