@@ -22,7 +22,7 @@ from isaaclab.scene import InteractiveSceneCfg
 from isaaclab.utils import configclass
 from isaaclab.utils.assets import ISAAC_NUCLEUS_DIR
 
-from uwlab_assets import UWLAB_CLOUD_ASSETS_DIR
+from uwlab_assets import UWLAB_ASSETS_EXT_DIR, UWLAB_CLOUD_ASSETS_DIR
 from uwlab_assets.robots.ur5e_robotiq_gripper import (
     EXPLICIT_UR5E_ROBOTIQ_2F140,
     IMPLICIT_UR5E_ROBOTIQ_2F140,
@@ -42,6 +42,7 @@ from ... import mdp as task_mdp
 # below, with gripper joints zeroed to the 2F-140 open pose. Safe for non-grasped reset
 # types only.
 OMNIRESET_2F140_DATASET_DIR = os.path.expanduser("~/.cache/uwlab/assets/Datasets/OmniReset2f140")
+CORNERED_BLOCK_ASSET_DIR = f"{UWLAB_ASSETS_EXT_DIR}/uwlab_assets/cornered_block"
 
 
 @configclass
@@ -770,6 +771,7 @@ variants = {
         "cupcake": make_insertive_object(f"{UWLAB_CLOUD_ASSETS_DIR}/Props/Custom/CupCake/cupcake.usd"),
         "cube": make_insertive_object(f"{UWLAB_CLOUD_ASSETS_DIR}/Props/Custom/InsertiveCube/insertive_cube.usd"),
         "rectangle": make_insertive_object(f"{UWLAB_CLOUD_ASSETS_DIR}/Props/Custom/Rectangle/rectangle.usd"),
+        "block": make_insertive_object(f"{CORNERED_BLOCK_ASSET_DIR}/block/block.usd"),
     },
     "scene.receptive_object": {
         "fbtabletop": make_receptive_object(
@@ -782,6 +784,7 @@ variants = {
         "plate": make_receptive_object(f"{UWLAB_CLOUD_ASSETS_DIR}/Props/Custom/Plate/plate.usd"),
         "cube": make_receptive_object(f"{UWLAB_CLOUD_ASSETS_DIR}/Props/Custom/ReceptiveCube/receptive_cube.usd"),
         "wall": make_receptive_object(f"{UWLAB_CLOUD_ASSETS_DIR}/Props/Custom/Wall/wall.usd"),
+        "box": make_receptive_object(f"{CORNERED_BLOCK_ASSET_DIR}/box/box.usd"),
     },
 }
 
