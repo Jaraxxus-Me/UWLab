@@ -25,15 +25,12 @@ from isaaclab.utils.assets import ISAAC_NUCLEUS_DIR
 from uwlab_assets import UWLAB_CLOUD_ASSETS_DIR
 from uwlab_assets.robots.ur5e_robotiq_gripper import (
     EXPLICIT_UR5E_ROBOTIQ_2F140,
-    EXPLICIT_UR5E_ROBOTIQ_2F140_ARM_ONLY,
     IMPLICIT_UR5E_ROBOTIQ_2F140,
-    IMPLICIT_UR5E_ROBOTIQ_2F140_ARM_ONLY,
 )
 
 from uwlab_tasks.manager_based.manipulation.omnireset.config.ur5e_robotiq_2f140.actions import (
-    Ur5eRobotiq2f140ArmOnlyRelativeOSCAction,
-    Ur5eRobotiq2f140ArmOnlyRelativeOSCEvalAction,
     Ur5eRobotiq2f140RelativeOSCAction,
+    Ur5eRobotiq2f140RelativeOSCEvalAction,
 )
 
 from ... import mdp as task_mdp
@@ -384,10 +381,8 @@ class CommandsCfg:
     )
 
 
-# 12-joint subset matching the 2F-85 articulation DOF count so the observation
-# space matches 2F-85's exactly (6 arm + 6 gripper). The 2F-140 articulation
-# exposes 14 DOFs (two extra ``*_inner_finger_pad_joint``s); we omit those here
-# so checkpoints trained on 2F-85 load dimensionally on 2F-140 as well.
+# Full 2F-140 reset/observation joint order: 6 UR5e arm joints + the 6 active
+# Robotiq gripper joints. This matches the corrected 2F-140 reset-state tensors.
 _OBS_JOINT_NAMES_2F140 = [
     "shoulder_pan_joint",
     "shoulder_lift_joint",
@@ -886,24 +881,20 @@ class Ur5eRobotiq2f140RelCartesianOSCFinetuneCfg(Ur5eRobotiq2f140RlStateCfg):
 # Evaluation configuration (after Stage 1: implicit actuator, soft gains, no sysid DR)
 @configclass
 class Ur5eRobotiq2f140RelCartesianOSCEvalCfg(Ur5eRobotiq2f140RlStateCfg):
-    """Arm-only eval/debug config: implicit actuator, soft gains, 6D OSC action."""
+    """Evaluation config: implicit actuator, soft gains, 7D OSC + gripper action."""
 
     events: TrainEvalEventCfg = TrainEvalEventCfg()
-    actions: Ur5eRobotiq2f140ArmOnlyRelativeOSCAction = Ur5eRobotiq2f140ArmOnlyRelativeOSCAction()
-
-    def __post_init__(self):
-        super().__post_init__()
-        _configure_arm_only_debug(self, IMPLICIT_UR5E_ROBOTIQ_2F140_ARM_ONLY)
+    actions: Ur5eRobotiq2f140RelativeOSCAction = Ur5eRobotiq2f140RelativeOSCAction()
 
 
 # Evaluation configuration (after Stage 2: explicit actuator, stiff gains, fixed sysid)
 @configclass
 class Ur5eRobotiq2f140RelCartesianOSCFinetuneEvalCfg(Ur5eRobotiq2f140RlStateCfg):
-    """Arm-only eval/debug config: explicit actuator, stiff gains, 6D OSC action."""
+    """Finetune evaluation config: explicit actuator, stiff gains, 7D OSC + gripper action."""
 
     events: FinetuneEvalEventCfg = FinetuneEvalEventCfg()
-    actions: Ur5eRobotiq2f140ArmOnlyRelativeOSCEvalAction = Ur5eRobotiq2f140ArmOnlyRelativeOSCEvalAction()
+    actions: Ur5eRobotiq2f140RelativeOSCEvalAction = Ur5eRobotiq2f140RelativeOSCEvalAction()
 
     def __post_init__(self):
         super().__post_init__()
-        _configure_arm_only_debug(self, EXPLICIT_UR5E_ROBOTIQ_2F140_ARM_ONLY)
+        self.scene.robot = EXPLICIT_UR5E_ROBOTIQ_2F140.replace(prim_path="{ENV_REGEX_NS}/Robot")

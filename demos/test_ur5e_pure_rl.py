@@ -26,11 +26,10 @@ Usage (activate the project venv first):
 
     # Headless
     python demos/test_ur5e_pure_rl.py \
-        --checkpoint block_box_rl_expert.pt \
+        --checkpoint cube_state_rl_expert_seed42.pt \
         --num_envs 4 --num_episodes 20 --max_steps 200 \
-        env.scene.insertive_object=block \
-        env.scene.receptive_object=box \
-        env.events.reset_from_reset_states.params.dataset_dir=./Datasets/OmniReset
+        env.scene.insertive_object=cube \
+        env.scene.receptive_object=cube
 """
 
 """Launch Isaac Sim Simulator first."""
@@ -42,7 +41,7 @@ from isaaclab.app import AppLauncher
 
 parser = argparse.ArgumentParser(description="UR5e pre-trained policy evaluation.")
 parser.add_argument("--task", type=str,
-                    default="OmniReset-Ur5eRobotiq2f85-RelCartesianOSC-State-Play-v0",
+                    default="OmniReset-Ur5eRobotiq2f140-RelCartesianOSC-State-Play-v0",
                     help="Registered gym task ID.")
 parser.add_argument("--checkpoint", type=str, required=True, help="Path to the .pt checkpoint file.")
 parser.add_argument("--num_envs", type=int, default=1, help="Number of parallel environments.")

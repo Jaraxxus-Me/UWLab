@@ -66,6 +66,8 @@ parser.add_argument("--lift_height", type=float, default=0.15,
                     help="Distance (m) to lift the object above the grasp pose.")
 parser.add_argument("--close_hold_steps", type=int, default=30,
                     help="Number of steps to hold position at the grasp pose.")
+parser.add_argument("--disable_reset_states", action="store_true",
+                    help="Disable the task's reset-state dataset event and use the scene default reset.")
 AppLauncher.add_app_launcher_args(parser)
 
 args_cli, hydra_args = parser.parse_known_args()
@@ -218,6 +220,10 @@ def main(env_cfg: ManagerBasedRLEnvCfg, agent_cfg: RslRlBaseRunnerCfg):
     if args_cli.num_envs is not None:
         env_cfg.scene.num_envs = args_cli.num_envs
     env_cfg.sim.device = args_cli.device if args_cli.device is not None else env_cfg.sim.device
+    policy_dt = float(env_cfg.sim.dt) * int(env_cfg.decimation)
+    env_cfg.episode_length_s = max(float(env_cfg.episode_length_s), policy_dt * (args_cli.max_steps + 2))
+    if args_cli.disable_reset_states and hasattr(env_cfg.events, "reset_from_reset_states"):
+        env_cfg.events.reset_from_reset_states = None
 
     env = gym.make(args_cli.task, cfg=env_cfg)
     env = RslRlVecEnvWrapper(env, clip_actions=agent_cfg.clip_actions)
@@ -228,8 +234,15 @@ def main(env_cfg: ManagerBasedRLEnvCfg, agent_cfg: RslRlBaseRunnerCfg):
     has_gripper_action = num_actions == 7
     if num_actions not in (6, 7):
         raise RuntimeError(f"Expected 6D arm-only or 7D arm+gripper action space, got {num_actions}D.")
+    arm_term = env.unwrapped.action_manager._terms.get("arm")
 
     print(f"[INFO] Task: {args_cli.task}")
+    print(f"[INFO] Robot USD: {env.unwrapped.cfg.scene.robot.spawn.usd_path}")
+    print(f"[INFO] Episode length: {env.unwrapped.cfg.episode_length_s:.2f}s")
+    if arm_term is not None and hasattr(arm_term, "_use_task_space_inertia"):
+        print(f"[INFO] OSC task-space inertia: {arm_term._use_task_space_inertia}")
+    if args_cli.disable_reset_states:
+        print("[INFO] Reset-state event disabled for scripted demo.")
     if has_gripper_action:
         print(f"[INFO] Action space: {num_actions}-dim (6 Cartesian OSC + 1 binary gripper)")
     else:
