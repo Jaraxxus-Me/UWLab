@@ -102,3 +102,8 @@ class Ur5eRobotiq2f85RelativeJointPositionAction:
 @configclass
 class Robotiq2f85BinaryGripperAction:
     gripper = ROBOTIQ_GRIPPER_BINARY_ACTIONS
+
+
+@configclass
+class Robotiq2f140BinaryGripperAction:
+    gripper = ROBOTIQ_GRIPPER_BINARY_ACTIONS
