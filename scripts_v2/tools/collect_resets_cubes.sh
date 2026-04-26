@@ -1,16 +1,16 @@
-python scripts_v2/tools/record_partial_assemblies.py \
-    --task OmniReset-PartialAssemblies-v0 \
-    --num_envs 10 \
-    --num_trajectories 10 \
-    --headless \
-    env.scene.insertive_object=cube env.scene.receptive_object=cube
+# python scripts_v2/tools/record_partial_assemblies.py \
+#     --task OmniReset-PartialAssemblies-v0 \
+#     --num_envs 10 \
+#     --num_trajectories 10 \
+#     --headless \
+#     env.scene.insertive_object=cube env.scene.receptive_object=cube
 
-python scripts_v2/tools/record_grasps.py \
-    --task OmniReset-Robotiq2f140-GraspSampling-v0 \
-    --num_envs 8192 \
-    --num_grasps 1000 \
-    --headless \
-    env.scene.object=cube
+# python scripts_v2/tools/record_grasps.py \
+#     --task OmniReset-Robotiq2f140-GraspSampling-v0 \
+#     --num_envs 8192 \
+#     --num_grasps 1000 \
+#     --headless \
+#     env.scene.object=cube
 
 # Object Anywhere, End-Effector Anywhere (Reaching)
 python scripts_v2/tools/record_reset_states.py \
