@@ -6,15 +6,18 @@
 """Configuration for the UR5e + Robotiq 2F-140 robot.
 
 Mirrors the 2F-85 configuration so tasks can swap between the two grippers
-by changing only the articulation cfg import. The USD is a self-contained
-local asset (flattened arm + Omniverse 2F-140) that lives alongside this
-module under ``usd/ur5e_robotiq2f140.usd``.
+by changing only the articulation cfg import. The full robot and standalone
+gripper USDs are self-contained local assets that live alongside this module
+under ``usd/``.
 
 The following configurations are available:
 
 * :obj:`UR5E_ROBOTIQ_2F140_ARTICULATION`: Base articulation (USD, init state).
+* :obj:`ROBOTIQ_2F140`: Grasp-sampling alias for the local 2F-140 asset.
 * :obj:`EXPLICIT_UR5E_ROBOTIQ_2F140`: Full robot with DelayedPDActuator arm (PD delay, for sim2real finetuning).
 * :obj:`IMPLICIT_UR5E_ROBOTIQ_2F140`: Full robot with ImplicitActuator arm (no motor delay, for RL training).
+* :obj:`EXPLICIT_UR5E_ROBOTIQ_2F140_ARM_ONLY`: UR5e-only debug asset with no gripper actuator.
+* :obj:`IMPLICIT_UR5E_ROBOTIQ_2F140_ARM_ONLY`: UR5e-only debug asset with no gripper actuator.
 """
 
 import os
@@ -23,7 +26,10 @@ import isaaclab.sim as sim_utils
 from isaaclab.actuators import DelayedPDActuatorCfg, ImplicitActuatorCfg
 from isaaclab.assets.articulation import ArticulationCfg
 
-_USD_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "usd", "ur5e_robotiq2f140.usd")
+_USD_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "usd")
+_USD_PATH = os.path.join(_USD_DIR, "ur5e_robotiq2f140.usd")
+_ARM_ONLY_USD_PATH = os.path.join(_USD_DIR, "ur5e_arm_only_omini.usd")
+_GRIPPER_USD_PATH = os.path.join(_USD_DIR, "robotiq_2f140_gripper.usd")
 
 # After patching the 2F-140 USD to match the 2F-85 closed-chain modeling pattern:
 # - ``*_outer_finger_joint`` converted from revolute to fixed
@@ -47,6 +53,15 @@ UR5E_DEFAULT_JOINT_POS = {
     "wrist_2_joint": -1.5708,
     "wrist_3_joint": -1.5708,
     **ROBOTIQ_2F140_DEFAULT_JOINT_POS,
+}
+
+UR5E_ARM_ONLY_DEFAULT_JOINT_POS = {
+    "shoulder_pan_joint": 0.0,
+    "shoulder_lift_joint": -1.5708,
+    "elbow_joint": 1.5708,
+    "wrist_1_joint": -1.5708,
+    "wrist_2_joint": -1.5708,
+    "wrist_3_joint": -1.5708,
 }
 
 UR5E_VELOCITY_LIMITS = {
@@ -83,11 +98,50 @@ UR5E_ROBOTIQ_2F140_ARTICULATION = ArticulationCfg(
     soft_joint_pos_limit_factor=1,
 )
 
+UR5E_ROBOTIQ_2F140_ARM_ONLY_ARTICULATION = ArticulationCfg(
+    spawn=sim_utils.UsdFileCfg(
+        usd_path=_ARM_ONLY_USD_PATH,
+        activate_contact_sensors=False,
+        rigid_props=sim_utils.RigidBodyPropertiesCfg(
+            disable_gravity=True,
+            max_depenetration_velocity=5.0,
+        ),
+        articulation_props=sim_utils.ArticulationRootPropertiesCfg(
+            enabled_self_collisions=True, solver_position_iteration_count=36, solver_velocity_iteration_count=0
+        ),
+    ),
+    init_state=ArticulationCfg.InitialStateCfg(
+        pos=(0, 0, 0), rot=(1, 0, 0, 0), joint_pos=UR5E_ARM_ONLY_DEFAULT_JOINT_POS
+    ),
+    soft_joint_pos_limit_factor=1,
+)
+
 _GRIPPER_ACTUATOR = ImplicitActuatorCfg(
     joint_names_expr=["finger_joint"],
     stiffness=17,
     damping=5,
     effort_limit_sim=60,
+)
+
+ROBOTIQ_2F140 = ArticulationCfg(
+    prim_path="{ENV_REGEX_NS}/RobotiqGripper",
+    spawn=sim_utils.UsdFileCfg(
+        usd_path=_GRIPPER_USD_PATH,
+        activate_contact_sensors=False,
+        rigid_props=sim_utils.RigidBodyPropertiesCfg(
+            disable_gravity=True,
+            max_depenetration_velocity=5.0,
+        ),
+        articulation_props=sim_utils.ArticulationRootPropertiesCfg(
+            enabled_self_collisions=False, solver_position_iteration_count=36, solver_velocity_iteration_count=0
+        ),
+        mass_props=sim_utils.MassPropertiesCfg(mass=0.5),
+    ),
+    init_state=ArticulationCfg.InitialStateCfg(
+        pos=(0, 0, 0.1), rot=(1, 0, 0, 0), joint_pos=ROBOTIQ_2F140_DEFAULT_JOINT_POS
+    ),
+    actuators={"gripper": _GRIPPER_ACTUATOR},
+    soft_joint_pos_limit_factor=1,
 )
 
 EXPLICIT_UR5E_ROBOTIQ_2F140 = UR5E_ROBOTIQ_2F140_ARTICULATION.copy()  # type: ignore
@@ -116,4 +170,30 @@ IMPLICIT_UR5E_ROBOTIQ_2F140.actuators = {
         velocity_limit_sim=UR5E_VELOCITY_LIMITS,
     ),
     "gripper": _GRIPPER_ACTUATOR,
+}
+
+EXPLICIT_UR5E_ROBOTIQ_2F140_ARM_ONLY = UR5E_ROBOTIQ_2F140_ARM_ONLY_ARTICULATION.copy()  # type: ignore
+EXPLICIT_UR5E_ROBOTIQ_2F140_ARM_ONLY.actuators = {
+    "arm": DelayedPDActuatorCfg(
+        joint_names_expr=["shoulder.*", "elbow.*", "wrist.*"],
+        stiffness=0.0,
+        damping=0.0,
+        effort_limit=UR5E_EFFORT_LIMITS,
+        effort_limit_sim=UR5E_EFFORT_LIMITS,
+        velocity_limit=UR5E_VELOCITY_LIMITS,
+        velocity_limit_sim=UR5E_VELOCITY_LIMITS,
+        min_delay=0,
+        max_delay=1,
+    ),
+}
+
+IMPLICIT_UR5E_ROBOTIQ_2F140_ARM_ONLY = UR5E_ROBOTIQ_2F140_ARM_ONLY_ARTICULATION.copy()  # type: ignore
+IMPLICIT_UR5E_ROBOTIQ_2F140_ARM_ONLY.actuators = {
+    "arm": ImplicitActuatorCfg(
+        joint_names_expr=["shoulder.*", "elbow.*", "wrist.*"],
+        stiffness=0.0,
+        damping=0.0,
+        effort_limit_sim=UR5E_EFFORT_LIMITS,
+        velocity_limit_sim=UR5E_VELOCITY_LIMITS,
+    ),
 }

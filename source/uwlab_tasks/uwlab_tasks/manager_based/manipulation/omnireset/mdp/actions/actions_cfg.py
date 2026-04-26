@@ -22,8 +22,9 @@ class RelCartesianOSCActionCfg(ActionTermCfg):
     task-space PD controller matching the real robot's OSC implementation:
         tau = J^T @ (Kp * pose_error + Kd * vel_error)
 
-    No inertial dynamics decoupling, no mass matrix. Designed to work with
-    the DelayedDCMotor actuator for sim2real alignment.
+    By default this uses no inertial dynamics decoupling, matching the real
+    robot implementation.  ``use_task_space_inertia`` enables a dynamically
+    consistent variant for arm-only/debug assets where the USD payload differs.
     """
 
     class_type: type[ActionTerm] = task_space_actions.RelCartesianOSCAction
@@ -57,3 +58,9 @@ class RelCartesianOSCActionCfg(ActionTermCfg):
 
     torque_limit: tuple[float, float, float, float, float, float] = (150.0, 150.0, 150.0, 28.0, 28.0, 28.0)
     """Per-joint torque limits (clamped after J^T multiplication)."""
+
+    use_task_space_inertia: bool = False
+    """If True, precondition task-space PD commands with the simulated joint-space mass matrix."""
+
+    task_space_inertia_damping: float = 1e-4
+    """Diagonal damping added to ``J M^-1 J^T`` before solving for the task-space inertia wrench."""

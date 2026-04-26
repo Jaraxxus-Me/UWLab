@@ -5,30 +5,30 @@
 
 """Pure-scripted pick-and-lift demo (no RL).
 
-Each episode runs a two-phase pick-and-lift sequence:
+Each episode runs a scripted approach/dwell/lift sequence:
 
-  1. **APPROACH + GRASP**: a ``BringToGoal`` proportional controller drives the EE to the
-     receptive object pose with a top-down orientation (gripper parallel to the block
-     faces). Once the EE is within pos/rot thresholds, the gripper closes and holds for
-     a few steps to let the fingers settle on the object.
+  1. **APPROACH + DWELL**: a ``BringToGoal`` controller drives the EE to the
+     receptive object pose with a top-down orientation. If the task exposes a gripper
+     action, the gripper closes and holds once the EE reaches the pre-grasp pose.
 
   2. **LIFT**: a second ``BringToGoal`` target at the same XY but raised in Z lifts the
-     object. The gripper stays closed.
+     wrist. On arm-only debug tasks this only tests wrist pose reaching.
 
-Works with any Ur5eRobotiq task (2F-85 or 2F-140) since the action space is identical:
-(6) Cartesian OSC deltas + (1) binary gripper.
+Works with the gripper-equipped Ur5eRobotiq tasks and the 2F-140 arm-only debug
+task. The gripper-equipped action space is (6) Cartesian OSC deltas + (1) binary
+gripper; the arm-only debug action space is just the 6 Cartesian OSC deltas.
 
 Usage (activate the project venv first):
     # 2F-85
-    python demos/test_ur5e_script_picking.py \\
-        --task OmniReset-Ur5eRobotiq2f85-RelCartesianOSC-State-Play-v0 \\
-        --num_envs 1 --num_episodes 3 --max_steps 400 \\
+    python demos/test_ur5e_script_picking.py \
+        --task OmniReset-Ur5eRobotiq2f85-RelCartesianOSC-State-Play-v0 \
+        --num_envs 1 --num_episodes 3 --max_steps 400 \
         env.scene.insertive_object=cube env.scene.receptive_object=cube
 
     # 2F-140
-    python demos/test_ur5e_script_picking.py \\
-        --task OmniReset-Ur5eRobotiq2f140-RelCartesianOSC-State-Play-v0 \\
-        --num_envs 1 --num_episodes 3 --max_steps 400 \\
+    python demos/test_ur5e_script_picking.py \
+        --task OmniReset-Ur5eRobotiq2f140-RelCartesianOSC-State-Play-v0 \
+        --num_envs 1 --num_episodes 3 --max_steps 400 \
         env.scene.insertive_object=cube env.scene.receptive_object=cube
 """
 
@@ -65,9 +65,9 @@ parser.add_argument("--grasp_wrist_offset", type=float, default=0.22,
 parser.add_argument("--lift_height", type=float, default=0.15,
                     help="Distance (m) to lift the object above the grasp pose.")
 parser.add_argument("--close_hold_steps", type=int, default=30,
-                    help="Number of steps to hold position while the gripper closes.")
-parser.add_argument("--control_gain", type=float, default=2.0,
-                    help="Proportional gain for the BringToGoal controller.")
+                    help="Number of steps to hold position at the grasp pose.")
+parser.add_argument("--disable_reset_states", action="store_true",
+                    help="Disable the task's reset-state dataset event and use the scene default reset.")
 AppLauncher.add_app_launcher_args(parser)
 
 args_cli, hydra_args = parser.parse_known_args()
@@ -154,18 +154,23 @@ def get_object_pos_in_base(env, asset_name: str):
 
 
 class BringToGoal:
-    """Proportional controller in OSC action space that drives the EE toward a goal pose.
+    """Action-following controller in OSC action space that drives the EE toward a goal pose.
 
     Outputs a 6-dim action (scaled delta position + axis-angle), clipped to [-1, 1].
+    No proportional gain — the action IS the per-step delta, so this is straight-line
+    interpolation at the maximum admissible speed until within one step of the goal,
+    at which point the final delta hits the goal exactly:
+
+        action = clamp(pose_error / action_scale, -1, 1)
+
     The goal is given in the robot base (root) frame and can be updated per step via
     :meth:`set_goal`.
     """
 
-    def __init__(self, action_scale: torch.Tensor, num_envs: int, device, gain: float = 0.5):
+    def __init__(self, action_scale: torch.Tensor, num_envs: int, device):
         self.action_scale = action_scale.to(device)
         self.device = device
         self.num_envs = num_envs
-        self.gain = gain
         self.goal_pos = torch.zeros(num_envs, 3, device=device)
         self.goal_quat = torch.zeros(num_envs, 4, device=device)
         self.goal_quat[:, 0] = 1.0  # identity
@@ -187,7 +192,7 @@ class BringToGoal:
         raw = pos_err.new_zeros(pos_err.shape[0], 6)
         raw[:, :3] = pos_err / self.action_scale[:3]
         raw[:, 3:] = rot_err_aa / self.action_scale[3:]
-        arm_actions = (self.gain * raw).clamp(-1.0, 1.0)
+        arm_actions = raw.clamp(-1.0, 1.0)
         return arm_actions, pos_err.norm(dim=-1), rot_err_aa.norm(dim=-1)
 
 
@@ -196,10 +201,10 @@ class BringToGoal:
 # ------------------------------------------------------------------
 
 # Phase encoding
-PHASE_APPROACH = 0   # hover above object, gripper open
-PHASE_PRE_GRASP = 1  # descend to grasp height, gripper still open
-PHASE_CLOSE = 2      # hold pre-grasp pose, close gripper
-PHASE_LIFT = 3       # rise to hover height, gripper closed
+PHASE_APPROACH = 0   # hover above object
+PHASE_PRE_GRASP = 1  # descend to grasp height
+PHASE_CLOSE = 2      # hold pre-grasp pose
+PHASE_LIFT = 3       # rise to hover height
 PHASE_NAMES = {
     PHASE_APPROACH: "approach",
     PHASE_PRE_GRASP: "pre_grasp",
@@ -215,6 +220,10 @@ def main(env_cfg: ManagerBasedRLEnvCfg, agent_cfg: RslRlBaseRunnerCfg):
     if args_cli.num_envs is not None:
         env_cfg.scene.num_envs = args_cli.num_envs
     env_cfg.sim.device = args_cli.device if args_cli.device is not None else env_cfg.sim.device
+    policy_dt = float(env_cfg.sim.dt) * int(env_cfg.decimation)
+    env_cfg.episode_length_s = max(float(env_cfg.episode_length_s), policy_dt * (args_cli.max_steps + 2))
+    if args_cli.disable_reset_states and hasattr(env_cfg.events, "reset_from_reset_states"):
+        env_cfg.events.reset_from_reset_states = None
 
     env = gym.make(args_cli.task, cfg=env_cfg)
     env = RslRlVecEnvWrapper(env, clip_actions=agent_cfg.clip_actions)
@@ -222,9 +231,22 @@ def main(env_cfg: ManagerBasedRLEnvCfg, agent_cfg: RslRlBaseRunnerCfg):
     num_envs = env.num_envs
     device = env.device
     num_actions = env.num_actions
+    has_gripper_action = num_actions == 7
+    if num_actions not in (6, 7):
+        raise RuntimeError(f"Expected 6D arm-only or 7D arm+gripper action space, got {num_actions}D.")
+    arm_term = env.unwrapped.action_manager._terms.get("arm")
 
     print(f"[INFO] Task: {args_cli.task}")
-    print(f"[INFO] Action space: {num_actions}-dim (6 Cartesian OSC + 1 binary gripper)")
+    print(f"[INFO] Robot USD: {env.unwrapped.cfg.scene.robot.spawn.usd_path}")
+    print(f"[INFO] Episode length: {env.unwrapped.cfg.episode_length_s:.2f}s")
+    if arm_term is not None and hasattr(arm_term, "_use_task_space_inertia"):
+        print(f"[INFO] OSC task-space inertia: {arm_term._use_task_space_inertia}")
+    if args_cli.disable_reset_states:
+        print("[INFO] Reset-state event disabled for scripted demo.")
+    if has_gripper_action:
+        print(f"[INFO] Action space: {num_actions}-dim (6 Cartesian OSC + 1 binary gripper)")
+    else:
+        print(f"[INFO] Action space: {num_actions}-dim (6 Cartesian OSC, arm only)")
 
     # OSC scale from the env's action cfg. Hardcoded to match ``UR5E_ROBOTIQ_*_RELATIVE_OSC``
     # in actions.py (the Play/Eval cfg uses the soft Kp variant with this scale).
@@ -239,7 +261,7 @@ def main(env_cfg: ManagerBasedRLEnvCfg, agent_cfg: RslRlBaseRunnerCfg):
     ).squeeze(0)
 
     controller = BringToGoal(
-        action_scale=action_scale, num_envs=num_envs, device=device, gain=args_cli.control_gain
+        action_scale=action_scale, num_envs=num_envs, device=device
     )
 
     # Visualization: current EE frame + active goal frame.
@@ -293,14 +315,14 @@ def main(env_cfg: ManagerBasedRLEnvCfg, agent_cfg: RslRlBaseRunnerCfg):
                     goal_pos[i] = obj_pos_b[i].clone()
                     goal_pos[i, 2] += args_cli.approach_wrist_offset
                 elif ph == PHASE_PRE_GRASP:
-                    # Descend to grasp height: fingers straddle the cube, gripper still open.
+                    # Descend to the target wrist height.
                     goal_pos[i] = obj_pos_b[i].clone()
                     goal_pos[i, 2] += args_cli.grasp_wrist_offset
                 elif ph == PHASE_CLOSE:
-                    # Hold the latched grasp pose while the fingers close.
+                    # Hold the latched target pose.
                     goal_pos[i] = grasp_pos[i]
                 else:  # PHASE_LIFT
-                    # Return to the hover height over the (now hopefully grasped) object.
+                    # Move upward from the latched target pose.
                     goal_pos[i] = grasp_pos[i].clone()
                     goal_pos[i, 2] += args_cli.lift_height
 
@@ -309,18 +331,18 @@ def main(env_cfg: ManagerBasedRLEnvCfg, agent_cfg: RslRlBaseRunnerCfg):
 
             arm_actions, pos_err, rot_err = controller.compute(ee_pos_b, ee_quat_b)
 
-            # --- Compose gripper action ---
-            # BinaryJointAction convention: actions >= 0 → OPEN, actions < 0 → CLOSE.
-            gripper_actions = torch.zeros(num_envs, 1, device=device)
-            for i in range(num_envs):
-                ph = phase[i].item()
-                if ph == PHASE_APPROACH or ph == PHASE_PRE_GRASP:
-                    gripper_actions[i] = 1.0  # open during approach + descent
-                else:
-                    gripper_actions[i] = -1.0  # closed through CLOSE and LIFT
-
-            # Full action tensor: [6 arm, 1 gripper]
-            actions = torch.cat([arm_actions, gripper_actions], dim=-1)
+            if has_gripper_action:
+                # BinaryJointAction convention: actions >= 0 -> OPEN, actions < 0 -> CLOSE.
+                gripper_actions = torch.zeros(num_envs, 1, device=device)
+                for i in range(num_envs):
+                    ph = phase[i].item()
+                    if ph == PHASE_APPROACH or ph == PHASE_PRE_GRASP:
+                        gripper_actions[i] = 1.0  # open during approach + descent
+                    else:
+                        gripper_actions[i] = -1.0  # closed through CLOSE and LIFT
+                actions = torch.cat([arm_actions, gripper_actions], dim=-1)
+            else:
+                actions = arm_actions
 
             obs, rewards, dones, extras = env.step(actions)
 

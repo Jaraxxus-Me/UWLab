@@ -65,6 +65,7 @@ class grasp_sampling_event(ManagerTermBase):
         self.grasp_align_axis = tuple(metadata.get("grasp_align_axis"))
         self.orientation_sample_axis = tuple(metadata.get("orientation_sample_axis"))
         self.gripper_joint_reset_config = {"finger_joint": metadata.get("finger_open_joint_angle")}
+        self.gripper_body_id = self._resolve_single_gripper_body_id(gripper_asset)
 
         # Store environment reference for later use
         self._env = env
@@ -339,14 +340,17 @@ class grasp_sampling_event(ManagerTermBase):
         world_pos, world_quat = math_utils.combine_frame_transforms(
             object_pos.unsqueeze(0), object_quat.unsqueeze(0), local_pos.unsqueeze(0), local_quat.unsqueeze(0)
         )
+        root_pos, root_quat = self._desired_body_pose_to_root_pose(
+            gripper_asset, world_pos, world_quat, torch.tensor([env_idx], device=env.device)
+        )
 
-        # Apply world transform to gripper asset for the specific environment
-        gripper_asset.data.root_pos_w[env_idx] = world_pos[0]
-        gripper_asset.data.root_quat_w[env_idx] = world_quat[0]
+        # Apply root transform that places the configured gripper body at the sampled pose.
+        gripper_asset.data.root_pos_w[env_idx] = root_pos[0]
+        gripper_asset.data.root_quat_w[env_idx] = root_quat[0]
 
         # Write the new pose to simulation
         indices = torch.tensor([env_idx], device=env.device)
-        root_pose = torch.cat([gripper_asset.data.root_pos_w[indices], gripper_asset.data.root_quat_w[indices]], dim=-1)
+        root_pose = torch.cat([root_pos, root_quat], dim=-1)
         gripper_asset.write_root_pose_to_sim(root_pose, env_ids=indices)
 
     def _apply_grasp_transforms_vectorized(self, env, gripper_asset, grasp_transforms, env_ids):
@@ -365,14 +369,44 @@ class grasp_sampling_event(ManagerTermBase):
         world_positions, world_quaternions = math_utils.combine_frame_transforms(
             object_pos, object_quat, local_positions, local_quaternions
         )
+        root_positions, root_quaternions = self._desired_body_pose_to_root_pose(
+            gripper_asset, world_positions, world_quaternions, env_ids
+        )
 
-        # Apply world transforms to gripper assets (vectorized)
-        gripper_asset.data.root_pos_w[env_ids] = world_positions
-        gripper_asset.data.root_quat_w[env_ids] = world_quaternions
+        # Apply root transforms that place the configured gripper body at each sampled pose.
+        gripper_asset.data.root_pos_w[env_ids] = root_positions
+        gripper_asset.data.root_quat_w[env_ids] = root_quaternions
 
         # Write the new poses to simulation (single vectorized call)
-        root_poses = torch.cat([world_positions, world_quaternions], dim=-1)
+        root_poses = torch.cat([root_positions, root_quaternions], dim=-1)
         gripper_asset.write_root_pose_to_sim(root_poses, env_ids=env_ids)
+
+    def _resolve_single_gripper_body_id(self, gripper_asset):
+        body_ids = getattr(self.gripper_cfg, "body_ids", None)
+        if body_ids is None:
+            return None
+        if isinstance(body_ids, slice):
+            return list(range(gripper_asset.num_bodies))[body_ids][0]
+        if isinstance(body_ids, Sequence):
+            return body_ids[0]
+        return body_ids
+
+    def _desired_body_pose_to_root_pose(self, gripper_asset, body_pos_w, body_quat_w, env_ids):
+        """Return root poses that place the configured gripper body at the desired poses."""
+        if self.gripper_body_id is None:
+            return body_pos_w, body_quat_w
+
+        current_root_pos_w = gripper_asset.data.root_pos_w[env_ids]
+        current_root_quat_w = gripper_asset.data.root_quat_w[env_ids]
+        current_body_pos_w = gripper_asset.data.body_state_w[env_ids, self.gripper_body_id, :3]
+        current_body_quat_w = gripper_asset.data.body_state_w[env_ids, self.gripper_body_id, 3:7]
+
+        body_pos_b, body_quat_b = math_utils.subtract_frame_transforms(
+            current_root_pos_w, current_root_quat_w, current_body_pos_w, current_body_quat_w
+        )
+        inv_body_quat_b = math_utils.quat_inv(body_quat_b)
+        inv_body_pos_b = -math_utils.quat_apply(inv_body_quat_b, body_pos_b)
+        return math_utils.combine_frame_transforms(body_pos_w, body_quat_w, inv_body_pos_b, inv_body_quat_b)
 
     def _visualize_grasp_poses(self, env, scale: float = 0.03):
         """Visualize all grasp poses using pose markers."""
@@ -1198,6 +1232,55 @@ class MultiResetManagerPadded(MultiResetManager):
                     continue
                 pad = torch.zeros(t.shape[0], target_dofs - t.shape[1], device=t.device, dtype=t.dtype)
                 robot_state[key] = torch.cat([t, pad], dim=1)
+
+    def __call__(
+        self,
+        env: ManagerBasedEnv,
+        env_ids: torch.Tensor,
+        dataset_dir: str,
+        reset_types: list[str],
+        probs: list[float],
+        success: str | None = None,
+        target_joint_dofs: int = 0,
+    ) -> None:
+        super().__call__(env, env_ids, dataset_dir, reset_types, probs, success)
+
+
+class MultiResetManagerResized(MultiResetManager):
+    """Resize dataset robot joint tensors to the live robot articulation DOF count.
+
+    OmniReset reset-state datasets include the UR5e arm first, followed by gripper
+    DOFs. Arm-only debug assets expose only the first 6 arm DOFs, so their reset
+    manager must keep the object/root states but trim robot joint tensors before
+    writing them to simulation.
+
+    Additional params (in addition to :class:`MultiResetManager` params):
+        target_joint_dofs: Target DOF count. If omitted or <= 0, uses the live
+            ``robot`` articulation joint count.
+    """
+
+    def __init__(self, cfg: EventTermCfg, env: ManagerBasedEnv):
+        super().__init__(cfg, env)
+        target_dofs = int(cfg.params.get("target_joint_dofs", 0))
+        if target_dofs <= 0:
+            robot: Articulation = env.scene["robot"]
+            target_dofs = robot.data.default_joint_pos.shape[1]
+        if target_dofs <= 0:
+            return
+
+        for ds in self.datasets:
+            robot_state = ds.get("initial_state", {}).get("articulation", {}).get("robot")
+            if robot_state is None:
+                continue
+            for key in ("joint_position", "joint_velocity"):
+                t = robot_state.get(key)
+                if t is None or t.dim() != 2 or t.shape[1] == target_dofs:
+                    continue
+                if t.shape[1] > target_dofs:
+                    robot_state[key] = t[:, :target_dofs]
+                else:
+                    pad = torch.zeros(t.shape[0], target_dofs - t.shape[1], device=t.device, dtype=t.dtype)
+                    robot_state[key] = torch.cat([t, pad], dim=1)
 
     def __call__(
         self,

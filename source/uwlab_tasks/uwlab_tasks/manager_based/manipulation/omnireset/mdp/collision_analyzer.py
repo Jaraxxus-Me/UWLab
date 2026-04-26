@@ -12,8 +12,9 @@ from typing import TYPE_CHECKING
 import isaaclab.utils.math as math_utils
 import warp as wp
 from isaaclab.assets import RigidObject
+from isaaclab.sim import get_all_matching_child_prims
 from isaaclab.sim.utils import get_first_matching_child_prim
-from pxr import UsdPhysics
+from pxr import Gf, Usd, UsdGeom, UsdPhysics
 
 from . import utils
 from .rigid_object_hasher import RigidObjectHasher
@@ -41,11 +42,14 @@ class CollisionAnalyzer:
         self.obstacles: list[RigidObject] = [env.scene[cfg.name] for cfg in cfg.obstacle_cfgs]
         # we support passing in a Articulation(joint connected rigidbodies) as asset, but that requires we collect all
         # body names user intended to generate collision checks
-        body_names = (
-            self.asset.body_names
-            if cfg.asset_cfg.body_names is None
-            else [self.asset.body_names[i] for i in cfg.asset_cfg.body_ids]
-        )
+        if cfg.asset_cfg.body_names is None:
+            body_names = self.asset.body_names
+        elif isinstance(cfg.asset_cfg.body_ids, slice):
+            body_names = self.asset.body_names[cfg.asset_cfg.body_ids]
+        elif isinstance(cfg.asset_cfg.body_ids, int):
+            body_names = [self.asset.body_names[cfg.asset_cfg.body_ids]]
+        else:
+            body_names = [self.asset.body_names[i] for i in cfg.asset_cfg.body_ids]
         if isinstance(body_names, str):
             body_names = [body_names]
 
@@ -57,16 +61,25 @@ class CollisionAnalyzer:
                 self.asset.cfg.prim_path.replace(".*", "0", 1),  # we use the 0th env prim as template
                 predicate=lambda p: p.GetName() == body_name and p.HasAPI(UsdPhysics.RigidBodyAPI),
             )
-            local_pts = utils.sample_object_point_cloud(
-                num_envs=env.num_envs,
-                num_points=cfg.num_points,
-                prim_path_pattern=str(prim.GetPath()).replace("env_0", "env_.*", 1),
-                device=env.device,
-            )
+            local_pts = None
+            if prim is not None:
+                local_pts = utils.sample_object_point_cloud(
+                    num_envs=env.num_envs,
+                    num_points=cfg.num_points,
+                    prim_path_pattern=str(prim.GetPath()).replace("env_0", "env_.*", 1),
+                    device=env.device,
+                )
+                if local_pts is None:
+                    local_pts = self._sample_collision_bbox_point_cloud(env, prim, cfg.num_points)
             if local_pts is not None:
                 self.local_pts.append(local_pts.view(env.num_envs, 1, cfg.num_points, 3))
                 self.body_ids.append(self.asset.body_names.index(body_name))
             # pc_time = time.perf_counter() - start
+        if not self.local_pts:
+            raise ValueError(
+                f"CollisionAnalyzer could not sample collision points for asset '{cfg.asset_cfg.name}'"
+                f" with bodies {body_names}."
+            )
         self.local_pts = torch.cat(self.local_pts, dim=1)
         self.body_ids = torch.tensor(self.body_ids, dtype=torch.int, device=env.device)
 
@@ -113,6 +126,74 @@ class CollisionAnalyzer:
         self.collider_rel_transform = pad_sequence(rel_transform, batch_first=True, padding_value=0).view(
             len(self.obstacles), env.num_envs, -1, 10
         )
+
+    @staticmethod
+    def _box_surface_points(min_corner: torch.Tensor, max_corner: torch.Tensor, num_points: int) -> torch.Tensor:
+        """Sample deterministic points on an axis-aligned box surface."""
+        num_per_face = max(1, (num_points + 5) // 6)
+        u = (torch.arange(num_per_face, dtype=torch.float32) + 0.5) / num_per_face
+        v = torch.remainder(torch.arange(num_per_face, dtype=torch.float32) * 0.61803398875, 1.0)
+        points = []
+        for axis in range(3):
+            other_axes = [idx for idx in range(3) if idx != axis]
+            for side in range(2):
+                point = torch.empty((num_per_face, 3), dtype=torch.float32)
+                point[:, axis] = min_corner[axis] if side == 0 else max_corner[axis]
+                point[:, other_axes[0]] = min_corner[other_axes[0]] + u * (
+                    max_corner[other_axes[0]] - min_corner[other_axes[0]]
+                )
+                point[:, other_axes[1]] = min_corner[other_axes[1]] + v * (
+                    max_corner[other_axes[1]] - min_corner[other_axes[1]]
+                )
+                points.append(point)
+        return torch.cat(points, dim=0)[:num_points]
+
+    def _sample_collision_bbox_point_cloud(self, env: ManagerBasedRLEnv, body_prim: Usd.Prim, num_points: int):
+        """Fallback for USDs that author collision meshes directly on Xform prims."""
+        collider_prims = []
+        if body_prim.HasAPI(UsdPhysics.CollisionAPI):
+            collider_prims.append(body_prim)
+        collider_prims.extend(
+            get_all_matching_child_prims(
+                str(body_prim.GetPath()),
+                predicate=lambda p: p.HasAPI(UsdPhysics.CollisionAPI),
+                traverse_instance_prims=True,
+            )
+        )
+        if not collider_prims:
+            return None
+
+        bbox_cache = UsdGeom.BBoxCache(Usd.TimeCode.Default(), ["default", "render", "proxy"], useExtentsHint=False)
+        xform_cache = UsdGeom.XformCache()
+        body_inv = xform_cache.GetLocalToWorldTransform(body_prim).GetInverse()
+
+        points_per_collider = max(1, (num_points + len(collider_prims) - 1) // len(collider_prims))
+        local_points = []
+        for collider_prim in collider_prims:
+            box = bbox_cache.ComputeWorldBound(collider_prim).ComputeAlignedBox()
+            min_corner = torch.tensor(box.GetMin(), dtype=torch.float32)
+            max_corner = torch.tensor(box.GetMax(), dtype=torch.float32)
+            if not torch.isfinite(min_corner).all() or not torch.isfinite(max_corner).all():
+                continue
+            if torch.max(max_corner - min_corner) <= 1.0e-6:
+                continue
+
+            world_points = self._box_surface_points(min_corner, max_corner, points_per_collider)
+            body_points = [
+                body_inv.Transform(Gf.Vec3d(float(point[0]), float(point[1]), float(point[2])))
+                for point in world_points
+            ]
+            local_points.append(torch.tensor(body_points, dtype=torch.float32))
+
+        if not local_points:
+            return None
+
+        local_points = torch.cat(local_points, dim=0)
+        if local_points.shape[0] < num_points:
+            repeats = (num_points + local_points.shape[0] - 1) // local_points.shape[0]
+            local_points = local_points.repeat(repeats, 1)
+        local_points = local_points[:num_points].to(env.device)
+        return local_points.unsqueeze(0).expand(env.num_envs, -1, -1).contiguous()
 
     def __call__(self, env: ManagerBasedRLEnv, env_ids: torch.Tensor):
         pos_w = (

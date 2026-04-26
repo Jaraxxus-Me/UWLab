@@ -22,8 +22,11 @@ from isaaclab.scene import InteractiveSceneCfg
 from isaaclab.utils import configclass
 from isaaclab.utils.assets import ISAAC_NUCLEUS_DIR
 
-from uwlab_assets import UWLAB_CLOUD_ASSETS_DIR
-from uwlab_assets.robots.ur5e_robotiq_gripper import EXPLICIT_UR5E_ROBOTIQ_2F140, IMPLICIT_UR5E_ROBOTIQ_2F140
+from uwlab_assets import UWLAB_ASSETS_EXT_DIR, UWLAB_CLOUD_ASSETS_DIR
+from uwlab_assets.robots.ur5e_robotiq_gripper import (
+    EXPLICIT_UR5E_ROBOTIQ_2F140,
+    IMPLICIT_UR5E_ROBOTIQ_2F140,
+)
 
 from uwlab_tasks.manager_based.manipulation.omnireset.config.ur5e_robotiq_2f140.actions import (
     Ur5eRobotiq2f140RelativeOSCAction,
@@ -39,6 +42,7 @@ from ... import mdp as task_mdp
 # below, with gripper joints zeroed to the 2F-140 open pose. Safe for non-grasped reset
 # types only.
 OMNIRESET_2F140_DATASET_DIR = os.path.expanduser("~/.cache/uwlab/assets/Datasets/OmniReset2f140")
+CORNERED_BLOCK_ASSET_DIR = f"{UWLAB_ASSETS_EXT_DIR}/uwlab_assets/cornered_block"
 
 
 @configclass
@@ -378,10 +382,8 @@ class CommandsCfg:
     )
 
 
-# 12-joint subset matching the 2F-85 articulation DOF count so the observation
-# space matches 2F-85's exactly (6 arm + 6 gripper). The 2F-140 articulation
-# exposes 14 DOFs (two extra ``*_inner_finger_pad_joint``s); we omit those here
-# so checkpoints trained on 2F-85 load dimensionally on 2F-140 as well.
+# Full 2F-140 reset/observation joint order: 6 UR5e arm joints + the 6 active
+# Robotiq gripper joints. This matches the corrected 2F-140 reset-state tensors.
 _OBS_JOINT_NAMES_2F140 = [
     "shoulder_pan_joint",
     "shoulder_lift_joint",
@@ -419,6 +421,33 @@ _OBS_BODY_NAMES_2F140 = [
     "right_inner_finger",
     "right_inner_knuckle",
 ]
+
+_ARM_ONLY_JOINT_NAMES = [
+    "shoulder_pan_joint",
+    "shoulder_lift_joint",
+    "elbow_joint",
+    "wrist_1_joint",
+    "wrist_2_joint",
+    "wrist_3_joint",
+]
+
+_ARM_ONLY_BODY_NAMES = [
+    "base_link",
+    "shoulder_link",
+    "upper_arm_link",
+    "forearm_link",
+    "wrist_1_link",
+    "wrist_2_link",
+    "wrist_3_link",
+]
+
+
+def _arm_only_joint_cfg() -> SceneEntityCfg:
+    return SceneEntityCfg("robot", joint_names=_ARM_ONLY_JOINT_NAMES)
+
+
+def _arm_only_body_cfg() -> SceneEntityCfg:
+    return SceneEntityCfg("robot", body_names=_ARM_ONLY_BODY_NAMES)
 
 
 @configclass
@@ -742,6 +771,7 @@ variants = {
         "cupcake": make_insertive_object(f"{UWLAB_CLOUD_ASSETS_DIR}/Props/Custom/CupCake/cupcake.usd"),
         "cube": make_insertive_object(f"{UWLAB_CLOUD_ASSETS_DIR}/Props/Custom/InsertiveCube/insertive_cube.usd"),
         "rectangle": make_insertive_object(f"{UWLAB_CLOUD_ASSETS_DIR}/Props/Custom/Rectangle/rectangle.usd"),
+        "block": make_insertive_object(f"{CORNERED_BLOCK_ASSET_DIR}/block/block.usd"),
     },
     "scene.receptive_object": {
         "fbtabletop": make_receptive_object(
@@ -754,8 +784,39 @@ variants = {
         "plate": make_receptive_object(f"{UWLAB_CLOUD_ASSETS_DIR}/Props/Custom/Plate/plate.usd"),
         "cube": make_receptive_object(f"{UWLAB_CLOUD_ASSETS_DIR}/Props/Custom/ReceptiveCube/receptive_cube.usd"),
         "wall": make_receptive_object(f"{UWLAB_CLOUD_ASSETS_DIR}/Props/Custom/Wall/wall.usd"),
+        "box": make_receptive_object(f"{CORNERED_BLOCK_ASSET_DIR}/box/box.usd"),
     },
 }
+
+
+def _configure_arm_only_debug(env_cfg: ManagerBasedRLEnvCfg, robot_cfg) -> None:
+    """Switch the RL-state config to the UR5e arm-only debug articulation."""
+
+    env_cfg.scene.robot = robot_cfg.replace(prim_path="{ENV_REGEX_NS}/Robot")
+
+    # The arm-only articulation has 6 joints and 7 rigid bodies. The full 2F-140
+    # observation selectors include gripper joints/bodies that do not exist here.
+    env_cfg.observations.policy.joint_pos.params["asset_cfg"] = _arm_only_joint_cfg()
+    env_cfg.observations.critic.joint_pos.params["asset_cfg"] = _arm_only_joint_cfg()
+    env_cfg.observations.critic.joint_vel.params["asset_cfg"] = _arm_only_joint_cfg()
+    env_cfg.observations.critic.robot_joint_friction.params["asset_cfg"] = _arm_only_joint_cfg()
+    env_cfg.observations.critic.robot_joint_armature.params["asset_cfg"] = _arm_only_joint_cfg()
+    env_cfg.observations.critic.robot_joint_stiffness.params["asset_cfg"] = _arm_only_joint_cfg()
+    env_cfg.observations.critic.robot_joint_damping.params["asset_cfg"] = _arm_only_joint_cfg()
+    env_cfg.observations.critic.robot_material_properties.params["asset_cfg"] = _arm_only_body_cfg()
+    env_cfg.observations.critic.robot_mass.params["asset_cfg"] = _arm_only_body_cfg()
+
+    # Remove gripper randomization, but keep reset-state loading. The resized
+    # reset manager trims the dataset's robot joint tensors to the 6 arm DOFs
+    # while preserving the object poses from the same reset state.
+    if hasattr(env_cfg.events, "randomize_gripper_actuator_parameters"):
+        env_cfg.events.randomize_gripper_actuator_parameters = None
+    if hasattr(env_cfg.events, "reset_from_reset_states"):
+        env_cfg.events.reset_from_reset_states.func = task_mdp.MultiResetManagerResized
+        env_cfg.events.reset_from_reset_states.params["target_joint_dofs"] = len(_ARM_ONLY_JOINT_NAMES)
+
+    env_cfg.commands.task_command.asset_cfg = SceneEntityCfg("robot")
+    env_cfg.rewards.ee_asset_distance = None
 
 
 @configclass
@@ -823,7 +884,7 @@ class Ur5eRobotiq2f140RelCartesianOSCFinetuneCfg(Ur5eRobotiq2f140RlStateCfg):
 # Evaluation configuration (after Stage 1: implicit actuator, soft gains, no sysid DR)
 @configclass
 class Ur5eRobotiq2f140RelCartesianOSCEvalCfg(Ur5eRobotiq2f140RlStateCfg):
-    """Eval after Stage 1: implicit actuator, soft gains, large action scale, no sysid DR."""
+    """Evaluation config: implicit actuator, soft gains, 7D OSC + gripper action."""
 
     events: TrainEvalEventCfg = TrainEvalEventCfg()
     actions: Ur5eRobotiq2f140RelativeOSCAction = Ur5eRobotiq2f140RelativeOSCAction()
@@ -832,7 +893,7 @@ class Ur5eRobotiq2f140RelCartesianOSCEvalCfg(Ur5eRobotiq2f140RlStateCfg):
 # Evaluation configuration (after Stage 2: explicit actuator, stiff gains, fixed sysid)
 @configclass
 class Ur5eRobotiq2f140RelCartesianOSCFinetuneEvalCfg(Ur5eRobotiq2f140RlStateCfg):
-    """Eval after Stage 2: explicit actuator, stiff gains, small action scale, fixed sysid + OSC gains."""
+    """Finetune evaluation config: explicit actuator, stiff gains, 7D OSC + gripper action."""
 
     events: FinetuneEvalEventCfg = FinetuneEvalEventCfg()
     actions: Ur5eRobotiq2f140RelativeOSCEvalAction = Ur5eRobotiq2f140RelativeOSCEvalAction()
