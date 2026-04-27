@@ -26,7 +26,7 @@ Usage (activate the project venv first):
 
     # Headless
     python demos/test_ur5e_pure_rl.py \
-        --checkpoint cube_state_rl_expert_seed42.pt \
+        --checkpoint logs/rsl_rl/ur5e_robotiq_2f140_omnireset_agent/2026-04-26_02-37-26/model_6900.pt \
         --num_envs 4 --num_episodes 20 --max_steps 200 \
         env.scene.insertive_object=cube \
         env.scene.receptive_object=cube
