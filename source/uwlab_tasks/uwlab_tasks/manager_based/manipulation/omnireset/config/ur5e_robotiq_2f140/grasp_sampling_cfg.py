@@ -190,6 +190,7 @@ variants = {
         "cupcake": make_object(f"{UWLAB_CLOUD_ASSETS_DIR}/Props/Custom/CupCake/cupcake.usd"),
         "cube": make_object(f"{UWLAB_CLOUD_ASSETS_DIR}/Props/Custom/InsertiveCube/insertive_cube.usd"),
         "rectangle": make_object(f"{UWLAB_CLOUD_ASSETS_DIR}/Props/Custom/Rectangle/rectangle.usd"),
+        "block": make_object("/data/workspaces/bowenli2/skill_refactor/third-party/UWLab/source/uwlab_assets/uwlab_assets/cornered_block/block/block.usd"),
     }
 }
 

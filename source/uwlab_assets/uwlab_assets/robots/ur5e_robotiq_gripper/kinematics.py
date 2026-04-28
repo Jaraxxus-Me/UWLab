@@ -58,7 +58,7 @@ def _load_calibration() -> dict[str, torch.Tensor]:
     from .ur5e_robotiq_2f85_gripper import UR5E_ARTICULATION
 
     usd_dir = os.path.dirname(UR5E_ARTICULATION.spawn.usd_path)
-    meta_path = "/home/airlabbw/Research/skill_refactor/isaac_sim2real/third-party/UWLab/source/uwlab_assets/uwlab_assets/robots/ur5e_robotiq_gripper/usd/metadata.yaml"
+    meta_path = "/data/workspaces/bowenli2/skill_refactor/third-party/UWLab/source/uwlab_assets/uwlab_assets/robots/ur5e_robotiq_gripper/usd/metadata.yaml"
     # local = retrieve_file_path(meta_path, download_dir=tempfile.gettempdir())
     with open(meta_path) as f:
         metadata = yaml.safe_load(f)
