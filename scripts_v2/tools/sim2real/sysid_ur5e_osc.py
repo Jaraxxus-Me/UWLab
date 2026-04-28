@@ -6,7 +6,7 @@
 """
 System Identification for UR5e using CMA-ES (Closed-Loop Replay).
 
-Uses the manager-based env (OmniReset-Ur5eRobotiq2f85-Sysid-v0) so the same
+Uses the manager-based env (OmniReset-Ur5eRobotiq2f140-Sysid-v0) so the same
 RelCartesianOSCAction as RL is used — no duplicate OSC. PACE-style integration.
 
 Parameters (25 total): armature*6, static_friction*6, dynamic_ratio*6,
@@ -58,7 +58,7 @@ from isaaclab.utils.math import subtract_frame_transforms
 from uwlab_assets.robots.ur5e_robotiq_gripper.kinematics import ARM_JOINT_NAMES, EE_BODY_NAME, NUM_ARM_JOINTS
 
 import uwlab_tasks  # noqa: F401  # register gym envs
-from uwlab_tasks.manager_based.manipulation.omnireset.config.ur5e_robotiq_2f85.sysid_cfg import SysidEnvCfg
+from uwlab_tasks.manager_based.manipulation.omnireset.config.ur5e_robotiq_2f140.sysid_cfg import SysidEnvCfg
 from uwlab_tasks.manager_based.manipulation.omnireset.mdp.utils import settle_robot, target_pose_to_action
 
 # ============================================================================
@@ -196,6 +196,20 @@ def main():
     env_cfg = SysidEnvCfg()
     env_cfg.scene.num_envs = N
     env_cfg.scene.env_spacing = 2.0
+
+    repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../.."))
+    expected_usd_path = os.path.join(
+        repo_root,
+        "source/uwlab_assets/uwlab_assets/robots/ur5e_robotiq_gripper/usd/ur5e_robotiq2f140.usd",
+    )
+    robot_usd_path = os.path.abspath(env_cfg.scene.robot.spawn.usd_path)
+    if os.path.realpath(robot_usd_path) != os.path.realpath(expected_usd_path):
+        raise RuntimeError(
+            "sysid_ur5e_osc expected the local calibrated 2F-140 USD, "
+            f"got: {robot_usd_path}; expected: {expected_usd_path}"
+        )
+    print(f"Robot USD: {robot_usd_path}")
+
     _effort_lim = {
         "shoulder_pan_joint": 150.0,
         "shoulder_lift_joint": 150.0,
@@ -221,7 +235,7 @@ def main():
         min_delay=0,
         max_delay=args.delay_max,
     )
-    env = gym.make("OmniReset-Ur5eRobotiq2f85-Sysid-v0", cfg=env_cfg)
+    env = gym.make("OmniReset-Ur5eRobotiq2f140-Sysid-v0", cfg=env_cfg)
     env.reset()
 
     unwrapped = env.unwrapped
