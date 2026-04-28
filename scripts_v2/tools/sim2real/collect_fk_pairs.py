@@ -7,7 +7,8 @@
 
 Uses IK-based workspace randomization (identical to training resets) to
 sample diverse, reachable joint configurations.  For each configuration the
-physics-engine wrist_3_link pose (in the robot base frame) is recorded.
+physics-engine wrist_3_link pose (in the robot base frame) is recorded from
+the local UR5e + Robotiq 2F-140 USD.
 
 The companion script (diffusion_policy/test_fk_comparison.py) then runs
 our calibrated analytical FK on the same joint angles and compares,
@@ -23,6 +24,7 @@ Usage:
 """
 
 import argparse
+import os
 import numpy as np
 
 from isaaclab.app import AppLauncher
@@ -54,7 +56,7 @@ from isaaclab.utils import configclass  # noqa: E402
 
 import uwlab_tasks  # noqa: F401, E402
 from uwlab_tasks.manager_based.manipulation.omnireset import mdp as task_mdp  # noqa: E402
-from uwlab_tasks.manager_based.manipulation.omnireset.config.ur5e_robotiq_2f85.sysid_cfg import (  # noqa: E402
+from uwlab_tasks.manager_based.manipulation.omnireset.config.ur5e_robotiq_2f140.sysid_cfg import (  # noqa: E402
     SysidEnvCfg,
 )
 
@@ -97,7 +99,20 @@ def main():
     env_cfg.scene.num_envs = args_cli.num_samples
     env_cfg.events = FkPairsEventCfg()
 
-    env = gym.make("OmniReset-Ur5eRobotiq2f85-Sysid-v0", cfg=env_cfg)
+    repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../.."))
+    expected_usd_path = os.path.join(
+        repo_root,
+        "source/uwlab_assets/uwlab_assets/robots/ur5e_robotiq_gripper/usd/ur5e_robotiq2f140.usd",
+    )
+    robot_usd_path = os.path.abspath(env_cfg.scene.robot.spawn.usd_path)
+    if os.path.realpath(robot_usd_path) != os.path.realpath(expected_usd_path):
+        raise RuntimeError(
+            "collect_fk_pairs expected the local calibrated 2F-140 USD, "
+            f"got: {robot_usd_path}; expected: {expected_usd_path}"
+        )
+    print(f"Robot USD: {robot_usd_path}")
+
+    env = gym.make("OmniReset-Ur5eRobotiq2f140-Sysid-v0", cfg=env_cfg)
     device = env.unwrapped.device
 
     robot = env.unwrapped.scene["robot"]
