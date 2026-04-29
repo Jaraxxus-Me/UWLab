@@ -18,11 +18,15 @@ from isaaclab.utils import configclass
 from isaaclab.utils.assets import ISAAC_NUCLEUS_DIR
 
 import uwlab_assets.robots.ur5e_robotiq_gripper as ur5e_robotiq_gripper
-from uwlab_assets import UWLAB_CLOUD_ASSETS_DIR
+from uwlab_assets import UWLAB_ASSETS_EXT_DIR, UWLAB_CLOUD_ASSETS_DIR, custom_cloud_path
 
 from ... import mdp as task_mdp
 
 OBJECT_SPAWN_HEIGHT = 0.5
+BLOCK_USD = custom_cloud_path(
+    "Props/Custom/CorneredBlock/block/block.usd",
+    f"{UWLAB_ASSETS_EXT_DIR}/uwlab_assets/cornered_block/block/block.usd",
+)
 
 
 @configclass
@@ -190,7 +194,7 @@ variants = {
         "cupcake": make_object(f"{UWLAB_CLOUD_ASSETS_DIR}/Props/Custom/CupCake/cupcake.usd"),
         "cube": make_object(f"{UWLAB_CLOUD_ASSETS_DIR}/Props/Custom/InsertiveCube/insertive_cube.usd"),
         "rectangle": make_object(f"{UWLAB_CLOUD_ASSETS_DIR}/Props/Custom/Rectangle/rectangle.usd"),
-        "block": make_object("/data/workspaces/bowenli2/skill_refactor/third-party/UWLab/source/uwlab_assets/uwlab_assets/cornered_block/block/block.usd"),
+        "block": make_object(BLOCK_USD),
     }
 }
 

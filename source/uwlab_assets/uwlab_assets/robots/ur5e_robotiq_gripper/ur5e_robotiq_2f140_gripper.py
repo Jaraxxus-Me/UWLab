@@ -25,11 +25,18 @@ import os
 import isaaclab.sim as sim_utils
 from isaaclab.actuators import DelayedPDActuatorCfg, ImplicitActuatorCfg
 from isaaclab.assets.articulation import ArticulationCfg
+from uwlab_assets import custom_cloud_path
 
 _USD_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "usd")
-_USD_PATH = os.path.join(_USD_DIR, "ur5e_robotiq2f140.usd")
+_USD_PATH = custom_cloud_path(
+    "Robots/UniversalRobots/Ur5eRobotiq2f140/ur5e_robotiq2f140.usd",
+    os.path.join(_USD_DIR, "ur5e_robotiq2f140.usd"),
+)
 _ARM_ONLY_USD_PATH = os.path.join(_USD_DIR, "ur5e_arm_only_omini.usd")
-_GRIPPER_USD_PATH = os.path.join(_USD_DIR, "robotiq_2f140_gripper.usd")
+_GRIPPER_USD_PATH = custom_cloud_path(
+    "Robots/UniversalRobots/Robotiq2f140/robotiq_2f140_gripper.usd",
+    os.path.join(_USD_DIR, "robotiq_2f140_gripper.usd"),
+)
 
 # After patching the 2F-140 USD to match the 2F-85 closed-chain modeling pattern:
 # - ``*_outer_finger_joint`` converted from revolute to fixed

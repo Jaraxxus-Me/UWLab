@@ -18,7 +18,7 @@ from isaaclab.scene import InteractiveSceneCfg
 from isaaclab.utils import configclass
 from isaaclab.utils.assets import ISAAC_NUCLEUS_DIR
 
-from uwlab_assets import UWLAB_ASSETS_EXT_DIR, UWLAB_CLOUD_ASSETS_DIR
+from uwlab_assets import UWLAB_ASSETS_EXT_DIR, UWLAB_CLOUD_ASSETS_DIR, custom_cloud_path
 from uwlab_assets.robots.ur5e_robotiq_gripper import IMPLICIT_UR5E_ROBOTIQ_2F140
 
 from uwlab_tasks.manager_based.manipulation.omnireset.config.ur5e_robotiq_2f140.actions import (
@@ -27,7 +27,10 @@ from uwlab_tasks.manager_based.manipulation.omnireset.config.ur5e_robotiq_2f140.
 
 from ... import mdp as task_mdp
 
-CORNERED_BLOCK_ASSET_DIR = f"{UWLAB_ASSETS_EXT_DIR}/uwlab_assets/cornered_block"
+CORNERED_BLOCK_ASSET_DIR = custom_cloud_path(
+    "Props/Custom/CorneredBlock",
+    f"{UWLAB_ASSETS_EXT_DIR}/uwlab_assets/cornered_block",
+)
 
 
 @configclass

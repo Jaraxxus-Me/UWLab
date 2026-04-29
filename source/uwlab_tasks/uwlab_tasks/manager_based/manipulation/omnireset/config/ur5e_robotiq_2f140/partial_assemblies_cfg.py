@@ -16,12 +16,15 @@ from isaaclab.scene import InteractiveSceneCfg
 from isaaclab.utils import configclass
 from isaaclab.utils.assets import ISAAC_NUCLEUS_DIR
 
-from uwlab_assets import UWLAB_ASSETS_EXT_DIR, UWLAB_CLOUD_ASSETS_DIR
+from uwlab_assets import UWLAB_ASSETS_EXT_DIR, UWLAB_CLOUD_ASSETS_DIR, custom_cloud_path
 
 from ... import mdp as task_mdp
 
 OBJECT_SPAWN_HEIGHT = 0.5
-CORNERED_BLOCK_ASSET_DIR = f"{UWLAB_ASSETS_EXT_DIR}/uwlab_assets/cornered_block"
+CORNERED_BLOCK_ASSET_DIR = custom_cloud_path(
+    "Props/Custom/CorneredBlock",
+    f"{UWLAB_ASSETS_EXT_DIR}/uwlab_assets/cornered_block",
+)
 
 
 @configclass

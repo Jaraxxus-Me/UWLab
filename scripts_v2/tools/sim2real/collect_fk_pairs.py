@@ -8,7 +8,7 @@
 Uses IK-based workspace randomization (identical to training resets) to
 sample diverse, reachable joint configurations.  For each configuration the
 physics-engine wrist_3_link pose (in the robot base frame) is recorded from
-the local UR5e + Robotiq 2F-140 USD.
+the configured UR5e + Robotiq 2F-140 USD.
 
 The companion script (diffusion_policy/test_fk_comparison.py) then runs
 our calibrated analytical FK on the same joint angles and compares,
@@ -24,7 +24,6 @@ Usage:
 """
 
 import argparse
-import os
 import numpy as np
 
 from isaaclab.app import AppLauncher
@@ -99,16 +98,12 @@ def main():
     env_cfg.scene.num_envs = args_cli.num_samples
     env_cfg.events = FkPairsEventCfg()
 
-    repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../.."))
-    expected_usd_path = os.path.join(
-        repo_root,
-        "source/uwlab_assets/uwlab_assets/robots/ur5e_robotiq_gripper/usd/ur5e_robotiq2f140.usd",
-    )
-    robot_usd_path = os.path.abspath(env_cfg.scene.robot.spawn.usd_path)
-    if os.path.realpath(robot_usd_path) != os.path.realpath(expected_usd_path):
+    robot_usd_path = env_cfg.scene.robot.spawn.usd_path
+    robot_usd_name = robot_usd_path.rstrip("/").rsplit("/", 1)[-1]
+    if robot_usd_name != "ur5e_robotiq2f140.usd":
         raise RuntimeError(
-            "collect_fk_pairs expected the local calibrated 2F-140 USD, "
-            f"got: {robot_usd_path}; expected: {expected_usd_path}"
+            "collect_fk_pairs expected the calibrated 2F-140 USD, "
+            f"got: {robot_usd_path}"
         )
     print(f"Robot USD: {robot_usd_path}")
 

@@ -22,6 +22,31 @@ UWLAB_ASSETS_METADATA = toml.load(os.path.join(UWLAB_ASSETS_EXT_DIR, "config", "
 """Extension metadata dictionary parsed from the extension.toml file."""
 
 UWLAB_CLOUD_ASSETS_DIR = "https://huggingface.co/datasets/UW-Lab/uwlab-assets/resolve/main"
+DEFAULT_CUSTOM_CLOUD_ASSETS_DIR = "https://huggingface.co/datasets/bowenli1024/ReSYNC_IsaacLab/resolve/main"
+CUSTOM_CLOUD_ASSETS_DIR = (
+    os.environ.get("CUSTOM_CLOUD_ASSETS_DIR")
+    or os.environ.get("UWLAB_CUSTOM_CLOUD_ASSETS_DIR")
+    or DEFAULT_CUSTOM_CLOUD_ASSETS_DIR
+)
+"""Optional project-specific cloud asset root.
+
+Override ``CUSTOM_CLOUD_ASSETS_DIR`` with a public HTTP(S), Omniverse, or local
+root that mirrors the relative layout expected by :func:`custom_cloud_path`.
+"""
+
+
+def _join_asset_path(root: str, relative_path: str) -> str:
+    """Join an asset root and relative path for URLs, Omniverse paths, or files."""
+    if root.startswith(("http://", "https://", "omniverse://")):
+        return f"{root.rstrip('/')}/{relative_path.lstrip('/')}"
+    return os.path.join(os.path.expanduser(root), relative_path)
+
+
+def custom_cloud_path(relative_path: str, local_fallback: str) -> str:
+    """Return a custom-cloud asset path when configured, otherwise a local path."""
+    if CUSTOM_CLOUD_ASSETS_DIR:
+        return _join_asset_path(CUSTOM_CLOUD_ASSETS_DIR, relative_path)
+    return local_fallback
 
 
 def _extract_relative_path(url: str) -> str:

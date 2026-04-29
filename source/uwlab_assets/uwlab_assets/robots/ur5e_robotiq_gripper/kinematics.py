@@ -22,11 +22,8 @@ base_link frame (180 deg Z rotation from base_link_inertia).
 
 import functools
 import os
-import tempfile
 import torch
 import yaml
-
-from isaaclab.utils.assets import retrieve_file_path
 
 # ============================================================================
 # Constants
@@ -54,16 +51,13 @@ R_180Z = torch.tensor([[-1, 0, 0], [0, -1, 0], [0, 0, 1]], dtype=torch.float32)
 
 @functools.lru_cache(maxsize=1)
 def _load_calibration() -> dict[str, torch.Tensor]:
-    """Download (once) and parse calibrated kinematics from the robot metadata."""
-    from .ur5e_robotiq_2f85_gripper import UR5E_ARTICULATION
-
-    usd_dir = os.path.dirname(UR5E_ARTICULATION.spawn.usd_path)
-    meta_path = "/data/workspaces/bowenli2/skill_refactor/third-party/UWLab/source/uwlab_assets/uwlab_assets/robots/ur5e_robotiq_gripper/usd/metadata.yaml"
-    # local = retrieve_file_path(meta_path, download_dir=tempfile.gettempdir())
+    """Load calibrated kinematics from the robot metadata."""
+    usd_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "usd")
+    meta_path = os.path.join(usd_dir, "metadata.yaml")
     with open(meta_path) as f:
         metadata = yaml.safe_load(f)
     if metadata is None:
-        raise RuntimeError(f"metadata.yaml is empty or failed to load: {local} (source: {meta_path})")
+        raise RuntimeError(f"metadata.yaml is empty or failed to load: {meta_path}")
     joints = metadata["calibrated_joints"]
     inertials = metadata["link_inertials"]
     return {

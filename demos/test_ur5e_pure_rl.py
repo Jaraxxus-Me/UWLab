@@ -26,7 +26,7 @@ Usage (activate the project venv first):
 
     # Headless
     python demos/test_ur5e_pure_rl.py \
-        --checkpoint logs/rsl_rl/ur5e_robotiq_2f140_omnireset_agent/train_from_2f85_pre_trained/model_6900.pt \
+        --checkpoint model_8500.pt \
         --num_envs 4 --num_episodes 20 --max_steps 200 \
         env.scene.insertive_object=block \
         env.scene.receptive_object=box \
