@@ -35,13 +35,9 @@ from uwlab_tasks.manager_based.manipulation.omnireset.config.ur5e_robotiq_2f140.
 
 from ... import mdp as task_mdp
 
-# Gripper joints in OmniReset datasets were recorded on a 2F-85 gripper. Indices 10-11
-# of the recorded qpos land on different physical joints on a 2F-140 articulation
-# (*_inner_finger_pad_joint vs *_inner_finger_knuckle_joint), and the finger kinematics
-# differ. demos/make_2f140_reset_dataset.py produces a corrected copy under the path
-# below, with gripper joints zeroed to the 2F-140 open pose. Safe for non-grasped reset
-# types only.
-OMNIRESET_2F140_DATASET_DIR = os.path.expanduser("~/.cache/uwlab/assets/Datasets/OmniReset2f140")
+# New reset states should be generated in the real workspace, where the table
+# and objects sit at -X in the robot base frame.
+OMNIRESET_2F140_DATASET_DIR = os.path.expanduser("./Datasets/OmniResetRealWorkspace")
 CORNERED_BLOCK_ASSET_DIR = custom_cloud_path(
     "Props/Custom/CorneredBlock",
     f"{UWLAB_ASSETS_EXT_DIR}/uwlab_assets/cornered_block",
@@ -89,7 +85,7 @@ class RlStateSceneCfg(InteractiveSceneCfg):
     # Environment
     table = RigidObjectCfg(
         prim_path="{ENV_REGEX_NS}/Table",
-        init_state=RigidObjectCfg.InitialStateCfg(pos=(0.4, 0.0, -0.881), rot=(0.707, 0.0, 0.0, -0.707)),
+        init_state=RigidObjectCfg.InitialStateCfg(pos=(-0.4, 0.0, -0.881), rot=(0.707, 0.0, 0.0, 0.707)),
         spawn=sim_utils.UsdFileCfg(
             usd_path=f"{UWLAB_CLOUD_ASSETS_DIR}/Props/Mounts/UWPatVention/pat_vention.usd",
             rigid_props=sim_utils.RigidBodyPropertiesCfg(kinematic_enabled=True),
@@ -263,7 +259,7 @@ class TrainEventCfg(BaseEventCfg):
         func=task_mdp.MultiResetManager,
         mode="reset",
         params={
-            "dataset_dir": f"{UWLAB_CLOUD_ASSETS_DIR}/Datasets/OmniReset",
+            "dataset_dir": OMNIRESET_2F140_DATASET_DIR,
             "reset_types": [
                 "ObjectAnywhereEEAnywhere",
                 "ObjectRestingEEGrasped",

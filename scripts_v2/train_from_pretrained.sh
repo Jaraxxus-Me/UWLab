@@ -6,4 +6,4 @@ python scripts/reinforcement_learning/rsl_rl/train.py \
     --resume_path 2f140_cube_6900.pt \
     env.scene.insertive_object=block \
     env.scene.receptive_object=box \
-    env.events.reset_from_reset_states.params.dataset_dir=./Datasets/OmniReset
+    env.events.reset_from_reset_states.params.dataset_dir=./Datasets/OmniResetRealWorkspace

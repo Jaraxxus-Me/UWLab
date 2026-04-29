@@ -77,12 +77,12 @@ class FkPairsEventCfg:
             "fixed_asset_cfg": SceneEntityCfg("robot"),
             "fixed_asset_offset": None,
             "pose_range_b": {
-                "x": (0.3, 0.7),
+                "x": (-0.7, -0.3),
                 "y": (-0.4, 0.4),
                 "z": (0.0, 0.5),
                 "roll": (0.0, 0.0),
                 "pitch": (np.pi / 4, 3 * np.pi / 4),
-                "yaw": (np.pi / 2, 3 * np.pi / 2),
+                "yaw": (-np.pi / 2, np.pi / 2),
             },
             "robot_ik_cfg": SceneEntityCfg(
                 "robot",

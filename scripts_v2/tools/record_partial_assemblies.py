@@ -22,7 +22,10 @@ parser = argparse.ArgumentParser(description="Record partial assemblies for obje
 parser.add_argument("--num_envs", type=int, default=1, help="Number of environments to simulate.")
 parser.add_argument("--task", type=str, default="UW-FBLeg-PartialAssemblies-v0", help="Name of the task.")
 parser.add_argument(
-    "--dataset_dir", type=str, default="./Datasets/OmniReset/", help="Root Datasets/OmniReset/ directory."
+    "--dataset_dir",
+    type=str,
+    default="./Datasets/OmniResetRealWorkspace/",
+    help="Root Datasets/OmniResetRealWorkspace/ directory.",
 )
 parser.add_argument(
     "--num_trajectories", type=int, default=1, help="Number of physics trajectories to run for pose discovery."

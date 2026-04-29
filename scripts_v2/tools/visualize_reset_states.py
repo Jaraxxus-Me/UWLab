@@ -21,7 +21,7 @@ parser.add_argument("--task", type=str, default=None, help="Name of the task.")
 parser.add_argument(
     "--dataset_dir",
     type=str,
-    default="./Datasets/OmniReset",
+    default="./Datasets/OmniResetRealWorkspace",
     help="Base dataset directory (contains Resets/<Pair>/ subdirectories).",
 )
 parser.add_argument(

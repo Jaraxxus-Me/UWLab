@@ -30,7 +30,7 @@ Usage (activate the project venv first):
         --num_envs 4 --num_episodes 20 --max_steps 200 \
         env.scene.insertive_object=block \
         env.scene.receptive_object=box \
-        env.events.reset_from_reset_states.params.dataset_dir=./Datasets/OmniReset
+        env.events.reset_from_reset_states.params.dataset_dir=./Datasets/OmniResetRealWorkspace
 """
 
 """Launch Isaac Sim Simulator first."""

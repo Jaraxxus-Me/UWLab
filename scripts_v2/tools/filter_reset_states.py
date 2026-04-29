@@ -187,13 +187,13 @@ def main() -> None:
     parser.add_argument(
         "--input_dir",
         type=str,
-        default="./Datasets/OmniReset/Resets/block__box_original",
+        default="./Datasets/OmniResetRealWorkspace/Resets/block__box_original",
         help="Directory of resets_*.pt files to filter.",
     )
     parser.add_argument(
         "--output_dir",
         type=str,
-        default="./Datasets/OmniReset/Resets/block__box",
+        default="./Datasets/OmniResetRealWorkspace/Resets/block__box",
         help="Directory to write filtered files into.",
     )
     parser.add_argument("--dx_max", type=float, default=0.11, help="Max |dx| of block in box frame (meters).")

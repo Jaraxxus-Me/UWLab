@@ -58,7 +58,7 @@ class CameraAlignSceneCfg(RlStateSceneCfg):
     # --- Background curtains (match real workspace) ---
     curtain_left = RigidObjectCfg(
         prim_path="{ENV_REGEX_NS}/CurtainLeft",
-        init_state=RigidObjectCfg.InitialStateCfg(pos=(0.4, -0.68, 0.519), rot=(0.707, 0.0, 0.0, -0.707)),
+        init_state=RigidObjectCfg.InitialStateCfg(pos=(-0.4, 0.68, 0.519), rot=(0.707, 0.0, 0.0, 0.707)),
         spawn=sim_utils.CuboidCfg(
             size=(0.01, 1.0, 1.125),
             rigid_props=sim_utils.RigidBodyPropertiesCfg(kinematic_enabled=True),
@@ -68,7 +68,7 @@ class CameraAlignSceneCfg(RlStateSceneCfg):
     )
     curtain_back = RigidObjectCfg(
         prim_path="{ENV_REGEX_NS}/CurtainBack",
-        init_state=RigidObjectCfg.InitialStateCfg(pos=(-0.15, 0.0, 0.519), rot=(1.0, 0.0, 0.0, 0.0)),
+        init_state=RigidObjectCfg.InitialStateCfg(pos=(0.15, 0.0, 0.519), rot=(0.0, 0.0, 0.0, 1.0)),
         spawn=sim_utils.CuboidCfg(
             size=(0.01, 1.3, 1.125),
             rigid_props=sim_utils.RigidBodyPropertiesCfg(kinematic_enabled=True),
@@ -78,7 +78,7 @@ class CameraAlignSceneCfg(RlStateSceneCfg):
     )
     curtain_right = RigidObjectCfg(
         prim_path="{ENV_REGEX_NS}/CurtainRight",
-        init_state=RigidObjectCfg.InitialStateCfg(pos=(0.4, 0.68, 0.519), rot=(0.707, 0.0, 0.0, -0.707)),
+        init_state=RigidObjectCfg.InitialStateCfg(pos=(-0.4, -0.68, 0.519), rot=(0.707, 0.0, 0.0, 0.707)),
         spawn=sim_utils.CuboidCfg(
             size=(0.01, 1.0, 1.125),
             rigid_props=sim_utils.RigidBodyPropertiesCfg(kinematic_enabled=True),
@@ -94,8 +94,8 @@ class CameraAlignSceneCfg(RlStateSceneCfg):
         height=480,
         width=640,
         offset=TiledCameraCfg.OffsetCfg(
-            pos=(1.0770121, -0.1679045, 0.4486344),
-            rot=(0.70564552, 0.46613815, 0.25072644, 0.47107948),
+            pos=(-1.0770121, 0.1679045, 0.4486344),
+            rot=(0.47107948, 0.25072644, -0.46613815, -0.70564552),
             convention="opengl",
         ),
         data_types=["rgb"],
@@ -108,8 +108,8 @@ class CameraAlignSceneCfg(RlStateSceneCfg):
         height=480,
         width=640,
         offset=TiledCameraCfg.OffsetCfg(
-            pos=(0.8323904, 0.5877843, 0.2805111),
-            rot=(0.29008842, 0.22122445, 0.51336143, 0.77676798),
+            pos=(-0.8323904, -0.5877843, 0.2805111),
+            rot=(0.77676798, 0.51336143, -0.22122445, -0.29008842),
             convention="opengl",
         ),
         data_types=["rgb"],

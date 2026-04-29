@@ -31,6 +31,7 @@ CORNERED_BLOCK_ASSET_DIR = custom_cloud_path(
     "Props/Custom/CorneredBlock",
     f"{UWLAB_ASSETS_EXT_DIR}/uwlab_assets/cornered_block",
 )
+OMNIRESET_2F140_DATASET_DIR = "./Datasets/OmniResetRealWorkspace"
 
 
 @configclass
@@ -77,7 +78,7 @@ class ResetStatesSceneCfg(InteractiveSceneCfg):
     # Environment
     table = RigidObjectCfg(
         prim_path="{ENV_REGEX_NS}/Table",
-        init_state=RigidObjectCfg.InitialStateCfg(pos=(0.4, 0.0, -0.881), rot=(0.707, 0.0, 0.0, -0.707)),
+        init_state=RigidObjectCfg.InitialStateCfg(pos=(-0.4, 0.0, -0.881), rot=(0.707, 0.0, 0.0, 0.707)),
         spawn=sim_utils.UsdFileCfg(
             usd_path=f"{UWLAB_CLOUD_ASSETS_DIR}/Props/Mounts/UWPatVention/pat_vention.usd",
             rigid_props=sim_utils.RigidBodyPropertiesCfg(kinematic_enabled=True),
@@ -178,12 +179,12 @@ class ResetStatesBaseEventCfg:
         mode="reset",
         params={
             "pose_range": {
-                "x": (0.5, 0.6),
+                "x": (-0.6, -0.5),
                 "y": (-0.1, 0.1),
                 "z": (0.0, 0.0),
                 "roll": (0.0, 0.0),
                 "pitch": (0.0, 0.0),
-                "yaw": (-np.pi / 12, np.pi / 12),
+                "yaw": (11 * np.pi / 12, 13 * np.pi / 12),
             },
             "velocity_range": {},
             "asset_cfgs": {"receptive_object": SceneEntityCfg("receptive_object")},
@@ -229,7 +230,7 @@ class ObjectAnywhereEEAnywhereEventCfg(ResetStatesBaseEventCfg):
                 "z": (0.0, 0.5),
                 "roll": (0.0, 0.0),
                 "pitch": (np.pi / 4, 3 * np.pi / 4),
-                "yaw": (np.pi / 2, 3 * np.pi / 2),
+                "yaw": (-np.pi / 2, np.pi / 2),
             },
             "robot_ik_cfg": SceneEntityCfg(
                 "robot", joint_names=["shoulder.*", "elbow.*", "wrist.*"], body_names="robotiq_base_link"
@@ -244,7 +245,7 @@ class ObjectRestingEEGraspedEventCfg(ResetStatesBaseEventCfg):
         func=task_mdp.MultiResetManager,
         mode="reset",
         params={
-            "dataset_dir": f"{UWLAB_CLOUD_ASSETS_DIR}/Datasets/OmniReset",
+            "dataset_dir": OMNIRESET_2F140_DATASET_DIR,
             "reset_types": ["ObjectAnywhereEEAnywhere"],
             "probs": [1.0],
         },
@@ -254,7 +255,7 @@ class ObjectRestingEEGraspedEventCfg(ResetStatesBaseEventCfg):
         func=task_mdp.reset_end_effector_from_grasp_dataset,
         mode="reset",
         params={
-            "dataset_dir": f"{UWLAB_CLOUD_ASSETS_DIR}/Datasets/OmniReset",
+            "dataset_dir": OMNIRESET_2F140_DATASET_DIR,
             "fixed_asset_cfg": SceneEntityCfg("insertive_object"),
             "robot_ik_cfg": SceneEntityCfg(
                 "robot", joint_names=["shoulder.*", "elbow.*", "wrist.*"], body_names="robotiq_base_link"
@@ -300,7 +301,7 @@ class ObjectAnywhereEEGraspedEventCfg(ResetStatesBaseEventCfg):
         func=task_mdp.reset_end_effector_from_grasp_dataset,
         mode="reset",
         params={
-            "dataset_dir": f"{UWLAB_CLOUD_ASSETS_DIR}/Datasets/OmniReset",
+            "dataset_dir": OMNIRESET_2F140_DATASET_DIR,
             "fixed_asset_cfg": SceneEntityCfg("insertive_object"),
             "robot_ik_cfg": SceneEntityCfg(
                 "robot", joint_names=["shoulder.*", "elbow.*", "wrist.*"], body_names="robotiq_base_link"
@@ -324,7 +325,7 @@ class ObjectPartiallyAssembledEEAnywhereEventCfg(ResetStatesBaseEventCfg):
         func=task_mdp.reset_insertive_object_from_partial_assembly_dataset,
         mode="reset",
         params={
-            "dataset_dir": f"{UWLAB_CLOUD_ASSETS_DIR}/Datasets/OmniReset",
+            "dataset_dir": OMNIRESET_2F140_DATASET_DIR,
             "insertive_object_cfg": SceneEntityCfg("insertive_object"),
             "receptive_object_cfg": SceneEntityCfg("receptive_object"),
             "pose_range_b": {
@@ -345,12 +346,12 @@ class ObjectPartiallyAssembledEEAnywhereEventCfg(ResetStatesBaseEventCfg):
             "fixed_asset_cfg": SceneEntityCfg("robot"),
             "fixed_asset_offset": None,
             "pose_range_b": {
-                "x": (0.3, 0.7),
+                "x": (-0.7, -0.3),
                 "y": (-0.4, 0.4),
                 "z": (0.5, 0.5),
                 "roll": (0.0, 0.0),
                 "pitch": (np.pi / 4, 3 * np.pi / 4),
-                "yaw": (np.pi / 2, 3 * np.pi / 2),
+                "yaw": (-np.pi / 2, np.pi / 2),
             },
             "robot_ik_cfg": SceneEntityCfg(
                 "robot", joint_names=["shoulder.*", "elbow.*", "wrist.*"], body_names="robotiq_base_link"
@@ -365,7 +366,7 @@ class ObjectPartiallyAssembledEEGraspedEventCfg(ResetStatesBaseEventCfg):
         func=task_mdp.reset_insertive_object_from_partial_assembly_dataset,
         mode="reset",
         params={
-            "dataset_dir": f"{UWLAB_CLOUD_ASSETS_DIR}/Datasets/OmniReset",
+            "dataset_dir": OMNIRESET_2F140_DATASET_DIR,
             "insertive_object_cfg": SceneEntityCfg("insertive_object"),
             "receptive_object_cfg": SceneEntityCfg("receptive_object"),
             "pose_range_b": {
@@ -383,7 +384,7 @@ class ObjectPartiallyAssembledEEGraspedEventCfg(ResetStatesBaseEventCfg):
         func=task_mdp.reset_end_effector_from_grasp_dataset,
         mode="reset",
         params={
-            "dataset_dir": f"{UWLAB_CLOUD_ASSETS_DIR}/Datasets/OmniReset",
+            "dataset_dir": OMNIRESET_2F140_DATASET_DIR,
             "fixed_asset_cfg": SceneEntityCfg("insertive_object"),
             "robot_ik_cfg": SceneEntityCfg(
                 "robot", joint_names=["shoulder.*", "elbow.*", "wrist.*"], body_names="robotiq_base_link"

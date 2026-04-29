@@ -55,20 +55,20 @@ ROBOTIQ_2F140_DEFAULT_JOINT_POS = {
 UR5E_DEFAULT_JOINT_POS = {
     "shoulder_pan_joint": 0.0,
     "shoulder_lift_joint": -1.5708,
-    "elbow_joint": 1.5708,
+    "elbow_joint": -1.5708,
     "wrist_1_joint": -1.5708,
-    "wrist_2_joint": -1.5708,
-    "wrist_3_joint": -1.5708,
+    "wrist_2_joint": 1.5708,
+    "wrist_3_joint": 0.0,
     **ROBOTIQ_2F140_DEFAULT_JOINT_POS,
 }
 
 UR5E_ARM_ONLY_DEFAULT_JOINT_POS = {
     "shoulder_pan_joint": 0.0,
     "shoulder_lift_joint": -1.5708,
-    "elbow_joint": 1.5708,
+    "elbow_joint": -1.5708,
     "wrist_1_joint": -1.5708,
-    "wrist_2_joint": -1.5708,
-    "wrist_3_joint": -1.5708,
+    "wrist_2_joint": 1.5708,
+    "wrist_3_joint": 0.0,
 }
 
 UR5E_VELOCITY_LIMITS = {
