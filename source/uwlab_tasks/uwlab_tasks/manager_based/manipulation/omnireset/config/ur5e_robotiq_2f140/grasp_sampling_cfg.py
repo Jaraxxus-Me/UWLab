@@ -92,7 +92,7 @@ class GraspSamplingEventCfg:
         params={
             "object_cfg": SceneEntityCfg("object"),
             "gripper_cfg": SceneEntityCfg("robot", body_names="robotiq_base_link"),
-            "num_candidates": 1e6,
+            "num_candidates": 1_000_000,
             "num_standoff_samples": 32,
             "num_orientations": 16,
             "lateral_sigma": 0.0,

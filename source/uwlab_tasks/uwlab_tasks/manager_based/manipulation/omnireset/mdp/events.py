@@ -36,7 +36,7 @@ from ..assembly_keypoints import Offset
 from .success_monitor_cfg import SuccessMonitorCfg
 
 
-class grasp_sampling_event(ManagerTermBase):
+class _GraspSamplingEvent(ManagerTermBase):
     """EventTerm class for grasp sampling and positioning gripper."""
 
     def __init__(self, cfg: EventTermCfg, env: ManagerBasedEnv):
@@ -489,6 +489,63 @@ class grasp_sampling_event(ManagerTermBase):
         # 4. Set joint targets to default positions to prevent drift
         gripper_asset.set_joint_position_target(default_joint_pos, env_ids=env_ids)
         gripper_asset.set_joint_velocity_target(zero_joint_vel, env_ids=env_ids)
+
+
+def grasp_sampling_event(
+    env: ManagerBasedEnv,
+    env_ids: torch.Tensor,
+    object_cfg: SceneEntityCfg,
+    gripper_cfg: SceneEntityCfg,
+    num_candidates: int,
+    num_standoff_samples: int,
+    num_orientations: int,
+    lateral_sigma: float,
+    visualize_grasps: bool = False,
+    visualization_scale: float = 0.01,
+) -> None:
+    """Sample and apply cached grasp poses.
+
+    Reset-mode event terms may run before Isaac Lab instantiates class terms
+    through the timeline callback. Keep the public event as a function and
+    cache the stateful sampler on the environment.
+    """
+    cache = getattr(env, "_uwlab_grasp_sampling_events", None)
+    if cache is None:
+        cache = {}
+        setattr(env, "_uwlab_grasp_sampling_events", cache)
+
+    key = (object_cfg.name, gripper_cfg.name, tuple(gripper_cfg.body_names or ()))
+    sampler = cache.get(key)
+    if sampler is None:
+        cfg = EventTermCfg(
+            func=_GraspSamplingEvent,
+            mode="reset",
+            params={
+                "object_cfg": object_cfg,
+                "gripper_cfg": gripper_cfg,
+                "num_candidates": num_candidates,
+                "num_standoff_samples": num_standoff_samples,
+                "num_orientations": num_orientations,
+                "lateral_sigma": lateral_sigma,
+                "visualize_grasps": visualize_grasps,
+                "visualization_scale": visualization_scale,
+            },
+        )
+        sampler = _GraspSamplingEvent(cfg=cfg, env=env)
+        cache[key] = sampler
+
+    sampler(
+        env,
+        env_ids,
+        object_cfg,
+        gripper_cfg,
+        num_candidates,
+        num_standoff_samples,
+        num_orientations,
+        lateral_sigma,
+        visualize_grasps,
+        visualization_scale,
+    )
 
 
 class global_physics_control_event(ManagerTermBase):

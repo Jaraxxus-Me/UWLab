@@ -73,5 +73,6 @@ tests/
 .uw-lab-docker-history
 
 Datasets
+Datasets*
 pretrained_checkpoints
 .vscode
