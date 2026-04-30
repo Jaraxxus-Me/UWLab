@@ -121,12 +121,12 @@ class CameraAlignSceneCfg(RlStateSceneCfg):
         height=480,
         width=640,
         offset=TiledCameraCfg.OffsetCfg(
-            pos=(-0.8323904, -0.5877843, 0.2805111),
-            rot=(0.77676798, 0.51336143, -0.22122445, -0.29008842),
+            pos=(-0.5430160, -0.2917557, 0.4118886),
+            rot=(0.93103116, 0.35759344, -0.06975901, 0.02101393),
             convention="opengl",
         ),
         data_types=["rgb"],
-        spawn=sim_utils.PinholeCameraCfg(focal_length=20.10),
+        spawn=sim_utils.PinholeCameraCfg(focal_length=24.40),
     )
 
     wrist_camera = TiledCameraCfg(
