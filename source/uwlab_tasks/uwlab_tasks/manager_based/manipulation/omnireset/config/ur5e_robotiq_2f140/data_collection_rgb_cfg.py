@@ -101,7 +101,7 @@ class DataCollectionRGBObjectSceneCfg(RlStateSceneCfg):
     )
 
     wrist_camera = TiledCameraCfg(
-        prim_path="{ENV_REGEX_NS}/Robot/robotiq_base_link/rgb_wrist_camera",
+        prim_path="{ENV_REGEX_NS}/Robot/ee_link/robotiq_base_link/rgb_wrist_camera",
         update_period=0,
         height=240,
         width=320,
@@ -169,7 +169,7 @@ class BaseRGBEventCfg(FinetuneEvalEventCfg):
         func=task_mdp.randomize_tiled_cameras,
         mode="reset",
         params={
-            "camera_path_template": "/World/envs/env_{}/Robot/robotiq_base_link/rgb_wrist_camera",
+            "camera_path_template": "/World/envs/env_{}/Robot/ee_link/robotiq_base_link/rgb_wrist_camera",
             # Base values from TiledCameraCfg
             "base_position": (0.0182505, -0.00408447, -0.0689107),
             "base_rotation": (0.34254336, -0.61819255, -0.6160212, 0.347879),
@@ -184,7 +184,7 @@ class BaseRGBEventCfg(FinetuneEvalEventCfg):
         func=task_mdp.randomize_camera_focal_length,
         mode="reset",
         params={
-            "camera_path_template": "/World/envs/env_{}/Robot/robotiq_base_link/rgb_wrist_camera",
+            "camera_path_template": "/World/envs/env_{}/Robot/ee_link/robotiq_base_link/rgb_wrist_camera",
             "focal_length_range": (23.55, 25.55),  # Range from wide-angle to telephoto
         },
     )

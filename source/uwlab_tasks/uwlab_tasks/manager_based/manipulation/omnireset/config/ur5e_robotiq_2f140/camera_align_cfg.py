@@ -33,6 +33,7 @@ from isaaclab.managers import TerminationTermCfg as DoneTerm
 from isaaclab.sensors import TiledCameraCfg
 from isaaclab.utils import configclass
 
+from uwlab_assets import UWLAB_CLOUD_ASSETS_DIR
 from uwlab_assets.robots.ur5e_robotiq_gripper import EXPLICIT_UR5E_ROBOTIQ_2F140
 
 from ... import mdp as task_mdp
@@ -54,6 +55,18 @@ class CameraAlignSceneCfg(RlStateSceneCfg):
 
     # Use explicit (sysid-tuned) actuator model
     robot = EXPLICIT_UR5E_ROBOTIQ_2F140.replace(prim_path="{ENV_REGEX_NS}/Robot")
+
+    # Use a light table material during camera alignment so the black 2F-140
+    # gripper is easier to separate from the workspace in RGB overlays.
+    table = RigidObjectCfg(
+        prim_path="{ENV_REGEX_NS}/Table",
+        init_state=RigidObjectCfg.InitialStateCfg(pos=(-0.4, 0.0, -0.881), rot=(0.707, 0.0, 0.0, 0.707)),
+        spawn=sim_utils.UsdFileCfg(
+            usd_path=f"{UWLAB_CLOUD_ASSETS_DIR}/Props/Mounts/UWPatVention/pat_vention.usd",
+            rigid_props=sim_utils.RigidBodyPropertiesCfg(kinematic_enabled=True),
+            visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(0.55, 0.68, 0.72), roughness=0.85),
+        ),
+    )
 
     # --- Background curtains (match real workspace) ---
     curtain_left = RigidObjectCfg(
@@ -117,17 +130,17 @@ class CameraAlignSceneCfg(RlStateSceneCfg):
     )
 
     wrist_camera = TiledCameraCfg(
-        prim_path="{ENV_REGEX_NS}/Robot/robotiq_base_link/rgb_wrist_camera",
+        prim_path="{ENV_REGEX_NS}/Robot/ee_link/robotiq_base_link/rgb_wrist_camera",
         update_period=0,
         height=480,
         width=640,
         offset=TiledCameraCfg.OffsetCfg(
-            pos=(0.0182505, -0.00408447, -0.0689107),
-            rot=(0.34254336, -0.61819255, -0.6160212, 0.347879),
+            pos=(0.0700000, -0.0390845, 0.0100000),
+            rot=(0.02827673, 0.70654118, 0.70678859, -0.02121002),
             convention="opengl",
         ),
         data_types=["rgb"],
-        spawn=sim_utils.PinholeCameraCfg(focal_length=24.55),
+        spawn=sim_utils.PinholeCameraCfg(focal_length=20.02),
     )
 
 
