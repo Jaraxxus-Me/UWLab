@@ -60,7 +60,7 @@ parser.add_argument(
     "--joint_angles",
     type=float,
     nargs=6,
-    default=[0.0, -91.74, -102.99, -75.27, 89.99, 0.0],
+    default=[0.0, -93.96, -108.35, -67.70, 89.99, 0.0],
     help="Arm joint angles (6 joints), interpreted by --joint_angle_units. Default matches real_env.py default init pose.",
 )
 parser.add_argument(

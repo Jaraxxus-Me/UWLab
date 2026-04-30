@@ -107,12 +107,12 @@ class CameraAlignSceneCfg(RlStateSceneCfg):
         height=480,
         width=640,
         offset=TiledCameraCfg.OffsetCfg(
-            pos=(-1.0770121, 0.1679045, 0.4486344),
-            rot=(0.47107948, 0.25072644, -0.46613815, -0.70564552),
+            pos=(-0.9101819, 0.0358507, 0.4750194),
+            rot=(0.67165214, 0.23014157, -0.25002852, -0.65833426),
             convention="opengl",
         ),
         data_types=["rgb"],
-        spawn=sim_utils.PinholeCameraCfg(focal_length=13.20),
+        spawn=sim_utils.PinholeCameraCfg(focal_length=24.40),
     )
 
     side_camera = TiledCameraCfg(
