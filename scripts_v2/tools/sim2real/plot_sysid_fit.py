@@ -41,6 +41,7 @@ simulation_app = app_launcher.app
 
 from isaaclab.actuators import DelayedPDActuatorCfg
 from isaaclab.assets import Articulation
+from uwlab_assets import custom_cloud_path
 from isaaclab.utils.math import subtract_frame_transforms
 
 from uwlab_assets.robots.ur5e_robotiq_gripper.kinematics import ARM_JOINT_NAMES, EE_BODY_NAME, NUM_ARM_JOINTS
@@ -271,9 +272,9 @@ def main():
     env_cfg.scene.env_spacing = 2.0
 
     repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../.."))
-    expected_usd_path = os.path.join(
-        repo_root,
-        "source/uwlab_assets/uwlab_assets/robots/ur5e_robotiq_gripper/usd/ur5e_robotiq2f140.usd",
+    expected_usd_path = custom_cloud_path(
+        "Robots/UniversalRobots/Ur5eRobotiq2f140/ur5e_robotiq2f140.usd",
+        os.path.join(repo_root, "ur5e_robotiq2f140.usd"),
     )
     robot_usd_path = os.path.abspath(env_cfg.scene.robot.spawn.usd_path)
     if os.path.realpath(robot_usd_path) != os.path.realpath(expected_usd_path):
