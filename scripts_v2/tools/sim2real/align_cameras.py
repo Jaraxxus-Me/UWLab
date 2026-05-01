@@ -33,7 +33,7 @@ Keyboard controls:
     a/d         move +/- Y           j/l  yaw +/-
     up/down     move +/- Z           u/o  roll +/-
     left/right  focal length -/+
-    1/2         blend ratio -/+  (0 = all sim, 1 = all real)
+    1/2         blend ratio -/+  (0 = all sim, 1 = all real; initial value from --blend)
     +/-         position step size +/-
     r           reset camera to initial pose
     p           print camera params & save current view
@@ -41,6 +41,7 @@ Keyboard controls:
 """
 
 import argparse
+import sys
 import numpy as np
 import torch
 
@@ -59,13 +60,51 @@ parser.add_argument(
     "--joint_angles",
     type=float,
     nargs=6,
-    default=[2.28, -95.58, 99.07, -93.36, -86.57, 4.33],
-    help="Arm joint angles in degrees (6 joints). Default matches real_env.py default init pose.",
+    default=[0.0, -93.96, -108.35, -67.70, 89.99, 0.0],
+    help="Arm joint angles (6 joints), interpreted by --joint_angle_units. Default matches real_env.py default init pose.",
 )
-parser.add_argument("--gripper_pos", type=float, default=1.0, help="Gripper position (0=closed, 1=open)")
+parser.add_argument(
+    "--joint_angle_units",
+    type=str,
+    default="deg",
+    choices=["deg", "rad"],
+    help="Units for --joint_angles. RTDE getActualQ() outputs radians; UR teach pendant values are usually degrees.",
+)
+parser.add_argument(
+    "--gripper_pos",
+    type=float,
+    default=1.0,
+    help="Binary gripper command: negative=closed, zero/positive=open.",
+)
 parser.add_argument("--warmup_steps", type=int, default=30, help="Simulation warmup steps before interaction")
+parser.add_argument(
+    "--blend",
+    type=float,
+    default=0.5,
+    help="Initial real-image blend weight in [0, 1]. 0=all sim, 1=all real.",
+)
 AppLauncher.add_app_launcher_args(parser)
 args_cli = parser.parse_args()
+
+if not 0.0 <= args_cli.blend <= 1.0:
+    raise SystemExit("--blend must be between 0.0 and 1.0 (0=all sim, 1=all real).")
+if args_cli.device == "cpu":
+    raise SystemExit(
+        "align_cameras.py requires Isaac Sim camera rendering, which needs an NVIDIA GPU. "
+        "Do not use --device cpu for this tool."
+    )
+if args_cli.device.startswith("cuda") and not torch.cuda.is_available():
+    raise SystemExit(
+        "align_cameras.py requires a CUDA-capable NVIDIA GPU, but PyTorch reports no available CUDA devices. "
+        "Check nvidia-smi / the NVIDIA driver before running this command."
+    )
+if args_cli.device.startswith("cuda:"):
+    requested_device_id = int(args_cli.device.split(":", 1)[1])
+    device_count = torch.cuda.device_count()
+    if requested_device_id >= device_count:
+        raise SystemExit(
+            f"Requested --device {args_cli.device}, but PyTorch only sees {device_count} CUDA device(s)."
+        )
 
 # launch omniverse app
 app_launcher = AppLauncher(args_cli)
@@ -82,7 +121,7 @@ import matplotlib.pyplot as plt  # noqa: E402
 from pxr import Gf, UsdGeom  # noqa: E402
 
 import uwlab_tasks  # noqa: F401
-from uwlab_tasks.manager_based.manipulation.omnireset.config.ur5e_robotiq_2f85.camera_align_cfg import (
+from uwlab_tasks.manager_based.manipulation.omnireset.config.ur5e_robotiq_2f140.camera_align_cfg import (
     CameraAlignEnvCfg,
 )
 
@@ -97,7 +136,7 @@ CAMERA_TO_RGB = {
 class CameraAligner:
     """Interactive controller: keyboard → camera pose → blended view."""
 
-    def __init__(self, env, camera_key, real_img, fig, ax):
+    def __init__(self, env, camera_key, real_img, fig, ax, blend):
         self.env = env
         self.camera_key = camera_key
         self.rgb_key = CAMERA_TO_RGB[camera_key]
@@ -121,7 +160,7 @@ class CameraAligner:
         self.pos_step = 0.005
         self.rot_step = 0.005
         self.focal_step = 0.1
-        self.blend = 0.5
+        self.blend = blend
 
         # We'll store the most recent obs
         self.obs = None
@@ -310,9 +349,10 @@ class CameraAligner:
 def main():
     # Create the camera-alignment environment
     env_cfg = CameraAlignEnvCfg()
+    env_cfg.sim.device = args_cli.device
 
     # Override default joint positions to match the real robot pose.
-    # joint_angles are in degrees; convert to radians for the init_state.
+    # Convert joint_angles to radians for the init_state.
     joint_names = [
         "shoulder_pan_joint",
         "shoulder_lift_joint",
@@ -321,11 +361,20 @@ def main():
         "wrist_2_joint",
         "wrist_3_joint",
     ]
-    joint_rads = [float(np.deg2rad(a)) for a in args_cli.joint_angles]
+    if args_cli.joint_angle_units == "deg":
+        joint_rads = [float(np.deg2rad(a)) for a in args_cli.joint_angles]
+        if max(abs(a) for a in args_cli.joint_angles) <= 2.0 * np.pi:
+            print(
+                "[WARN] --joint_angles look like radians, but --joint_angle_units=deg. "
+                "If these came from RTDE getActualQ(), rerun with --joint_angle_units rad.",
+                file=sys.stderr,
+            )
+    else:
+        joint_rads = [float(a) for a in args_cli.joint_angles]
     for name, rad in zip(joint_names, joint_rads):
         env_cfg.scene.robot.init_state.joint_pos[name] = rad
 
-    env = gym.make("OmniReset-Ur5eRobotiq2f85-CameraAlign-v0", cfg=env_cfg)
+    env = gym.make("OmniReset-Ur5eRobotiq2f140-CameraAlign-v0", cfg=env_cfg)
     device = env.unwrapped.device
 
     # Send zero OSC deltas so the robot holds the init joint config.
@@ -358,7 +407,7 @@ def main():
     fig, ax = plt.subplots(figsize=(8, 6))
     plt.ion()
 
-    aligner = CameraAligner(env, args_cli.camera, real_img, fig, ax)
+    aligner = CameraAligner(env, args_cli.camera, real_img, fig, ax, args_cli.blend)
     aligner.action = action
     aligner.obs = obs
 
