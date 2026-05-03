@@ -23,10 +23,23 @@ import numpy as np
 import os
 import time
 import torch
-
+from uwlab_assets import custom_cloud_path
 from isaaclab.app import AppLauncher
 
 parser = argparse.ArgumentParser(description="UR5e System Identification via CMA-ES")
+
+
+def parse_joint_values(raw: str) -> tuple[float, ...]:
+    """Parse a comma-separated 6-joint value list."""
+    try:
+        values = tuple(float(part.strip()) for part in raw.split(","))
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(f"expected comma-separated floats, got: {raw}") from exc
+    if len(values) != 6:
+        raise argparse.ArgumentTypeError(f"expected 6 comma-separated values, got {len(values)}: {raw}")
+    return values
+
+
 parser.add_argument("--num_envs", type=int, default=512)
 parser.add_argument("--real_data", type=str, required=True)
 parser.add_argument("--max_iter", type=int, default=200)
@@ -41,6 +54,42 @@ parser.add_argument("--friction_min", type=float, default=0.0)
 parser.add_argument("--friction_max", type=float, default=20.0)
 parser.add_argument("--viscous_friction_min", type=float, default=0.0)
 parser.add_argument("--viscous_friction_max", type=float, default=20.0)
+parser.add_argument(
+    "--armature_min_per_joint",
+    type=parse_joint_values,
+    default=None,
+    help="Optional comma-separated 6-value armature lower bounds. Overrides --armature_min per joint.",
+)
+parser.add_argument(
+    "--armature_max_per_joint",
+    type=parse_joint_values,
+    default=None,
+    help="Optional comma-separated 6-value armature upper bounds. Overrides --armature_max per joint.",
+)
+parser.add_argument(
+    "--friction_min_per_joint",
+    type=parse_joint_values,
+    default=None,
+    help="Optional comma-separated 6-value static-friction lower bounds. Overrides --friction_min per joint.",
+)
+parser.add_argument(
+    "--friction_max_per_joint",
+    type=parse_joint_values,
+    default=None,
+    help="Optional comma-separated 6-value static-friction upper bounds. Overrides --friction_max per joint.",
+)
+parser.add_argument(
+    "--viscous_friction_min_per_joint",
+    type=parse_joint_values,
+    default=None,
+    help="Optional comma-separated 6-value viscous-friction lower bounds. Overrides --viscous_friction_min per joint.",
+)
+parser.add_argument(
+    "--viscous_friction_max_per_joint",
+    type=parse_joint_values,
+    default=None,
+    help="Optional comma-separated 6-value viscous-friction upper bounds. Overrides --viscous_friction_max per joint.",
+)
 parser.add_argument(
     "--delay_max", type=int, default=5, help="Max motor delay in physics steps. CMA-ES searches [0, delay_max]."
 )
@@ -107,16 +156,62 @@ class CMAES:
 def build_bounds(args):
     """25 params: [armature*6, static_friction*6, dynamic_ratio*6, viscous_friction*6, delay*1]."""
     bounds = []
-    for _ in range(NUM_ARM_JOINTS):
-        bounds.append([args.armature_min, args.armature_max])
-    for _ in range(NUM_ARM_JOINTS):
-        bounds.append([args.friction_min, args.friction_max])
+    bounds.extend(
+        _joint_bounds(
+            args.armature_min,
+            args.armature_max,
+            args.armature_min_per_joint,
+            args.armature_max_per_joint,
+            "armature",
+        )
+    )
+    bounds.extend(
+        _joint_bounds(
+            args.friction_min,
+            args.friction_max,
+            args.friction_min_per_joint,
+            args.friction_max_per_joint,
+            "friction",
+        )
+    )
     for _ in range(NUM_ARM_JOINTS):
         bounds.append([0.0, 1.0])  # dynamic_ratio
-    for _ in range(NUM_ARM_JOINTS):
-        bounds.append([args.viscous_friction_min, args.viscous_friction_max])
+    bounds.extend(
+        _joint_bounds(
+            args.viscous_friction_min,
+            args.viscous_friction_max,
+            args.viscous_friction_min_per_joint,
+            args.viscous_friction_max_per_joint,
+            "viscous_friction",
+        )
+    )
     bounds.append([0.0, float(args.delay_max)])  # motor_delay
     return bounds
+
+
+def _joint_bounds(global_min, global_max, per_joint_min, per_joint_max, name):
+    """Build and validate per-joint bounds, falling back to scalar globals."""
+    min_values = np.full(NUM_ARM_JOINTS, global_min, dtype=float)
+    max_values = np.full(NUM_ARM_JOINTS, global_max, dtype=float)
+    if per_joint_min is not None:
+        min_values = np.asarray(per_joint_min, dtype=float)
+    if per_joint_max is not None:
+        max_values = np.asarray(per_joint_max, dtype=float)
+
+    invalid = np.where(max_values < min_values)[0]
+    if invalid.size > 0:
+        bad = ", ".join(ARM_JOINT_NAMES[i] for i in invalid)
+        raise ValueError(f"{name} upper bound is below lower bound for: {bad}")
+
+    return [[float(lo), float(hi)] for lo, hi in zip(min_values, max_values)]
+
+
+def _format_joint_bounds(bounds):
+    """Format six joint bounds compactly for logs."""
+    arr = np.asarray(bounds, dtype=float)
+    mins = np.array2string(arr[:, 0], precision=3, separator=", ")
+    maxs = np.array2string(arr[:, 1], precision=3, separator=", ")
+    return f"min={mins} max={maxs}"
 
 
 def apply_params_to_envs(robot, params_tensor, arm_joint_ids, num_joints, device):
@@ -198,9 +293,10 @@ def main():
     env_cfg.scene.env_spacing = 2.0
 
     repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../.."))
-    expected_usd_path = os.path.join(
-        repo_root,
-        "source/uwlab_assets/uwlab_assets/robots/ur5e_robotiq_gripper/usd/ur5e_robotiq2f140.usd",
+
+    expected_usd_path = custom_cloud_path(
+        "Robots/UniversalRobots/Ur5eRobotiq2f140/ur5e_robotiq2f140.usd",
+        os.path.join(repo_root, "ur5e_robotiq2f140.usd"),
     )
     robot_usd_path = os.path.abspath(env_cfg.scene.robot.spawn.usd_path)
     if os.path.realpath(robot_usd_path) != os.path.realpath(expected_usd_path):
@@ -256,12 +352,12 @@ def main():
     bounds = build_bounds(args)
     cmaes = CMAES(num_params=num_params, population_size=N, sigma=args.sigma, bounds=bounds)
 
-    print(
-        f"\nBounds: armature[{args.armature_min},{args.armature_max}] "
-        f"friction[{args.friction_min},{args.friction_max}] "
-        f"dyn_ratio[0,1] viscous[{args.viscous_friction_min},{args.viscous_friction_max}] "
-        f"delay[0,{args.delay_max}]"
-    )
+    print("\nBounds:")
+    print(f"  armature:        {_format_joint_bounds(bounds[:6])}")
+    print(f"  static friction: {_format_joint_bounds(bounds[6:12])}")
+    print("  dynamic ratio:   min=[0, 0, 0, 0, 0, 0] max=[1, 1, 1, 1, 1, 1]")
+    print(f"  viscous friction:{_format_joint_bounds(bounds[18:24])}")
+    print(f"  delay:           min=0 max={args.delay_max}")
 
     timestamp = time.strftime("%Y%m%d_%H%M%S")
     output_dir = os.path.join(args.output_dir, timestamp)

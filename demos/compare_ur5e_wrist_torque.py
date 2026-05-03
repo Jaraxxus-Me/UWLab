@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import argparse
 import functools
+import math
 from dataclasses import dataclass
 
 from isaaclab.app import AppLauncher
@@ -27,7 +28,7 @@ parser = argparse.ArgumentParser(description="Compare UR5e wrist OSC torques for
 parser.add_argument(
     "--task_a",
     type=str,
-    default="OmniReset-Ur5eRobotiq2f85-RelCartesianOSC-State-Play-v0",
+    default="OmniReset-Ur5eRobotiq2f140-RelCartesianOSC-State-Play-v0",
     help="First registered gym task ID. Defaults to the working 2F-85 full-gripper task.",
 )
 parser.add_argument(
@@ -38,6 +39,12 @@ parser.add_argument(
 )
 parser.add_argument("--steps", type=int, default=40, help="Number of policy steps to run per task.")
 parser.add_argument("--print_every", type=int, default=1, help="Print every N policy steps.")
+parser.add_argument(
+    "--check_jacobian",
+    action="store_true",
+    help="Finite-difference the simulated wrist_3_link pose at the start state and compare it to the analytical Jacobian.",
+)
+parser.add_argument("--jacobian_eps", type=float, default=1e-4, help="Joint perturbation, in radians, for --check_jacobian.")
 parser.add_argument(
     "--episode_length_s",
     type=float,
@@ -51,9 +58,9 @@ parser.add_argument(
     "--start_qpos",
     type=float,
     nargs=6,
-    default=[0.0, -1.5708, 1.5708, -1.5708, -1.5708, -1.5708],
+    default=[0.0, -math.pi / 2.0, -math.pi / 2.0, -math.pi / 2.0, math.pi / 2.0, 0.0],
     metavar=("SH_PAN", "SH_LIFT", "ELBOW", "WR1", "WR2", "WR3"),
-    help="Shared start qpos for the six UR5e arm joints.",
+    help="Shared start qpos for the six UR5e arm joints, in radians. Default is [0, -90, -90, -90, 90, 0] deg.",
 )
 parser.add_argument(
     "--goal_mode",
@@ -69,9 +76,9 @@ parser.add_argument(
     "--goal_axis_angle_delta",
     type=float,
     nargs=3,
-    default=[0.35, -0.35, 0.25],
+    default=[0.0, 0.0, math.pi / 2.0],
     metavar=("RX", "RY", "RZ"),
-    help="Orientation delta from task A's start wrist orientation, in axis-angle radians.",
+    help="Orientation delta from task A's start wrist orientation, in axis-angle radians. Default is +90 deg yaw.",
 )
 parser.add_argument(
     "--goal_rpy",
@@ -162,10 +169,23 @@ def _disable_random_events(env_cfg) -> None:
             setattr(env_cfg.events, name, None)
 
 
+def _disable_rewards(env_cfg) -> None:
+    """Disable task rewards; this script only diagnoses pose tracking and torques."""
+    if not hasattr(env_cfg, "rewards") or env_cfg.rewards is None:
+        return
+    for name in dir(env_cfg.rewards):
+        if name.startswith("_"):
+            continue
+        value = getattr(env_cfg.rewards, name)
+        if hasattr(value, "func") and hasattr(value, "weight"):
+            setattr(env_cfg.rewards, name, None)
+
+
 def _make_env(task_name: str, device: str):
     omni.usd.get_context().new_stage()
     env_cfg = parse_env_cfg(task_name, device=device, num_envs=1)
     _disable_random_events(env_cfg)
+    _disable_rewards(env_cfg)
     policy_dt = float(env_cfg.sim.dt) * int(env_cfg.decimation)
     min_episode_length_s = policy_dt * (args_cli.steps + 2)
     env_cfg.episode_length_s = (
@@ -256,6 +276,50 @@ def _compute_torque_debug(
     )
 
 
+def _check_jacobian_alignment(env, arm_joint_ids: list[int], arm_term: RelCartesianOSCAction) -> None:
+    robot = env.unwrapped.scene["robot"]
+    eps = float(args_cli.jacobian_eps)
+
+    qpos0 = robot.data.joint_pos.clone()
+    qvel0 = torch.zeros_like(robot.data.joint_vel)
+    ee_pos0, ee_quat0 = _get_ee_pose_in_base(env)
+
+    jacobian_fd = torch.zeros(1, 6, 6, device=env.unwrapped.device)
+    for joint_idx, joint_id in enumerate(arm_joint_ids):
+        qpos = qpos0.clone()
+        qpos[:, joint_id] += eps
+        robot.write_joint_state_to_sim(qpos, qvel0)
+        env.unwrapped.scene.write_data_to_sim()
+        env.unwrapped.sim.forward()
+        env.unwrapped.scene.update(0.0)
+
+        ee_pos1, ee_quat1 = _get_ee_pose_in_base(env)
+        jacobian_fd[:, :3, joint_idx] = (ee_pos1 - ee_pos0) / eps
+        delta_quat = quat_mul(ee_quat1, quat_inv(ee_quat0))
+        jacobian_fd[:, 3:, joint_idx] = axis_angle_from_quat(delta_quat) / eps
+
+    robot.write_joint_state_to_sim(qpos0, qvel0)
+    env.unwrapped.scene.write_data_to_sim()
+    env.unwrapped.sim.forward()
+    env.unwrapped.scene.update(0.0)
+
+    joint_pos = robot.data.joint_pos[:, arm_term._joint_ids]
+    jacobian_analytic = compute_jacobian_analytical(joint_pos, device=str(arm_term.device))
+
+    diff = jacobian_analytic - jacobian_fd
+    col_error = torch.linalg.norm(diff[0], dim=0).detach().cpu()
+    fd_norm = torch.linalg.norm(jacobian_fd[0], dim=0).detach().cpu()
+    analytic_norm = torch.linalg.norm(jacobian_analytic[0], dim=0).detach().cpu()
+    col_cos = torch.nn.functional.cosine_similarity(jacobian_analytic[0], jacobian_fd[0], dim=0).detach().cpu()
+
+    print("  jacobian_check:")
+    print(f"    eps: {eps:g}")
+    print(f"    fd_col_norm: {[round(float(x), 6) for x in fd_norm]}")
+    print(f"    analytical_col_norm: {[round(float(x), 6) for x in analytic_norm]}")
+    print(f"    col_error_norm: {[round(float(x), 6) for x in col_error]}")
+    print(f"    col_cosine: {[round(float(x), 6) for x in col_cos]}")
+
+
 def _fmt_float_list(values: list[float]) -> str:
     return "[" + ", ".join(f"{value:+10.5f}" for value in values) + "]"
 
@@ -305,10 +369,24 @@ def _run_case(task_name: str, device: str, start_qpos: torch.Tensor, goal_pose=N
     print(f"  arm joints: {arm_term._joint_names}")
     print(f"  kp: {[float(x) for x in arm_term._kp[0].detach().cpu()]}")
     print(f"  torque_limit: {[float(x) for x in arm_term._torque_max.detach().cpu()]}")
-    print(f"  use_task_space_inertia: {arm_term._use_task_space_inertia}")
+    print(
+        "  arm solver props:"
+        f" stiffness={[round(float(x), 6) for x in robot.data.joint_stiffness[0, arm_joint_ids].detach().cpu()]},"
+        f" damping={[round(float(x), 6) for x in robot.data.joint_damping[0, arm_joint_ids].detach().cpu()]},"
+        f" armature={[round(float(x), 6) for x in robot.data.joint_armature[0, arm_joint_ids].detach().cpu()]},"
+        f" friction={[round(float(x), 6) for x in robot.data.joint_friction_coeff[0, arm_joint_ids].detach().cpu()]}"
+    )
+    mass_matrix = robot.root_physx_view.get_generalized_mass_matrices()
+    arm_mass_matrix = mass_matrix[:, arm_joint_ids, :][:, :, arm_joint_ids]
+    arm_mass_diag = torch.diagonal(arm_mass_matrix[0]).detach().cpu()
+    arm_mass_eigs = torch.linalg.eigvalsh(arm_mass_matrix[0]).detach().cpu()
+    print(f"  arm mass diag: {[round(float(x), 6) for x in arm_mass_diag]}")
+    print(f"  arm mass eigs: {[round(float(x), 6) for x in arm_mass_eigs]}")
     print(f"  start_ee_pos_b: {[round(float(x), 5) for x in start_pos_b[0].detach().cpu()]}")
     print(f"  goal_pos_b: {[round(float(x), 5) for x in goal_pos_b[0].detach().cpu()]}")
     print(f"  goal_quat_b(wxyz): {[round(float(x), 5) for x in goal_quat_b[0].detach().cpu()]}")
+    if args_cli.check_jacobian:
+        _check_jacobian_alignment(env, arm_joint_ids, arm_term)
     print(
         "  step | pos_err | rot_err | raw wrist tau [w1,w2,w3] | "
         "clamped wrist tau [w1,w2,w3] | sat | applied after step"
@@ -338,7 +416,10 @@ def _run_case(task_name: str, device: str, start_qpos: torch.Tensor, goal_pose=N
             )
 
     final_pos_b, final_quat_b = _get_ee_pose_in_base(env)
-    _, final_rot_err_aa = compute_pose_error(final_pos_b, final_quat_b, goal_pos_b, goal_quat_b, rot_error_type="axis_angle")
+    final_pos_err, final_rot_err_aa = compute_pose_error(
+        final_pos_b, final_quat_b, goal_pos_b, goal_quat_b, rot_error_type="axis_angle"
+    )
+    print(f"  final_pos_err: {float(final_pos_err.norm(dim=-1)[0]):.6f} m")
     print(f"  final_rot_err: {float(final_rot_err_aa.norm(dim=-1)[0]):.6f} rad")
 
     goal_pose = (goal_pos_b.detach().cpu(), goal_quat_b.detach().cpu())

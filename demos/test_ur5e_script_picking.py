@@ -41,7 +41,7 @@ from isaaclab.app import AppLauncher
 
 parser = argparse.ArgumentParser(description="UR5e pure-scripted pick-and-lift demo.")
 parser.add_argument("--task", type=str,
-                    default="OmniReset-Ur5eRobotiq2f85-RelCartesianOSC-State-Play-v0",
+                    default="OmniReset-Ur5eRobotiq2f140-RelCartesianOSC-State-Play-v0",
                     help="Registered gym task ID.")
 parser.add_argument("--num_envs", type=int, default=1, help="Number of parallel environments.")
 parser.add_argument("--num_episodes", type=int, default=3, help="Total number of episodes to run.")
@@ -67,7 +67,9 @@ parser.add_argument("--lift_height", type=float, default=0.15,
 parser.add_argument("--close_hold_steps", type=int, default=30,
                     help="Number of steps to hold position at the grasp pose.")
 parser.add_argument("--disable_reset_states", action="store_true",
-                    help="Disable the task's reset-state dataset event and use the scene default reset.")
+                    help="Deprecated: reset-state datasets are disabled by default for this scripted demo.")
+parser.add_argument("--use_reset_states", action="store_true",
+                    help="Use the task's reset-state dataset event instead of the scene default reset.")
 AppLauncher.add_app_launcher_args(parser)
 
 args_cli, hydra_args = parser.parse_known_args()
@@ -212,6 +214,44 @@ PHASE_NAMES = {
     PHASE_LIFT: "lift",
 }
 
+EVENTS_TO_DISABLE = [
+    "robot_material",
+    "insertive_object_material",
+    "receptive_object_material",
+    "table_material",
+    "randomize_robot_mass",
+    "randomize_insertive_object_mass",
+    "randomize_receptive_object_mass",
+    "randomize_table_mass",
+    "randomize_gripper_actuator_parameters",
+    "randomize_arm_sysid",
+    "randomize_osc_gains",
+    "reset_from_reset_states",
+]
+
+
+def disable_scripted_demo_events(env_cfg: ManagerBasedRLEnvCfg) -> None:
+    """Remove training/reset dataset dependencies for deterministic visualization."""
+    if not hasattr(env_cfg, "events") or env_cfg.events is None:
+        return
+    for name in EVENTS_TO_DISABLE:
+        if name == "reset_from_reset_states" and args_cli.use_reset_states:
+            continue
+        if hasattr(env_cfg.events, name):
+            setattr(env_cfg.events, name, None)
+
+
+def disable_rewards(env_cfg: ManagerBasedRLEnvCfg) -> None:
+    """Rewards are not needed for this scripted motion demo."""
+    if not hasattr(env_cfg, "rewards") or env_cfg.rewards is None:
+        return
+    for name in dir(env_cfg.rewards):
+        if name.startswith("_"):
+            continue
+        value = getattr(env_cfg.rewards, name)
+        if hasattr(value, "func") and hasattr(value, "weight"):
+            setattr(env_cfg.rewards, name, None)
+
 
 @hydra_task_config(args_cli.task, "rsl_rl_cfg_entry_point")
 def main(env_cfg: ManagerBasedRLEnvCfg, agent_cfg: RslRlBaseRunnerCfg):
@@ -222,8 +262,8 @@ def main(env_cfg: ManagerBasedRLEnvCfg, agent_cfg: RslRlBaseRunnerCfg):
     env_cfg.sim.device = args_cli.device if args_cli.device is not None else env_cfg.sim.device
     policy_dt = float(env_cfg.sim.dt) * int(env_cfg.decimation)
     env_cfg.episode_length_s = max(float(env_cfg.episode_length_s), policy_dt * (args_cli.max_steps + 2))
-    if args_cli.disable_reset_states and hasattr(env_cfg.events, "reset_from_reset_states"):
-        env_cfg.events.reset_from_reset_states = None
+    disable_scripted_demo_events(env_cfg)
+    disable_rewards(env_cfg)
 
     env = gym.make(args_cli.task, cfg=env_cfg)
     env = RslRlVecEnvWrapper(env, clip_actions=agent_cfg.clip_actions)
@@ -239,10 +279,8 @@ def main(env_cfg: ManagerBasedRLEnvCfg, agent_cfg: RslRlBaseRunnerCfg):
     print(f"[INFO] Task: {args_cli.task}")
     print(f"[INFO] Robot USD: {env.unwrapped.cfg.scene.robot.spawn.usd_path}")
     print(f"[INFO] Episode length: {env.unwrapped.cfg.episode_length_s:.2f}s")
-    if arm_term is not None and hasattr(arm_term, "_use_task_space_inertia"):
-        print(f"[INFO] OSC task-space inertia: {arm_term._use_task_space_inertia}")
-    if args_cli.disable_reset_states:
-        print("[INFO] Reset-state event disabled for scripted demo.")
+    if not args_cli.use_reset_states:
+        print("[INFO] Reset-state datasets/randomization/rewards disabled for scripted demo.")
     if has_gripper_action:
         print(f"[INFO] Action space: {num_actions}-dim (6 Cartesian OSC + 1 binary gripper)")
     else:

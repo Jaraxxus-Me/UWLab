@@ -24,13 +24,8 @@ if TYPE_CHECKING:
 class RelCartesianOSCAction(ActionTerm):
     """Relative Cartesian OSC action term using analytical Jacobian and PD control.
 
-    By default, matches the real robot's OSC implementation using calibrated analytical kinematics:
+    Matches the real robot's OSC implementation using calibrated analytical kinematics:
         tau = J^T @ (Kp * pose_error + Kd * vel_error)
-
-    When ``use_task_space_inertia`` is enabled, task-space commands are
-    preconditioned by the simulated joint-space mass matrix before mapping with
-    J^T.  This is useful for arm-only debug assets where the distal payload is
-    intentionally different from the full gripper-equipped robot.
 
     The flow per policy step:
         1. process_actions: scale raw 6-DOF delta, compute desired EE pose
@@ -75,8 +70,6 @@ class RelCartesianOSCAction(ActionTerm):
         self._kp = kp.unsqueeze(0).expand(self.num_envs, -1).clone()
         self._kd = kd.unsqueeze(0).expand(self.num_envs, -1).clone()
         self._torque_max = torch.tensor(cfg.torque_limit, device=self.device, dtype=torch.float32)
-        self._use_task_space_inertia = cfg.use_task_space_inertia
-        self._task_space_inertia_damping = cfg.task_space_inertia_damping
 
         # Action scaling
         self._scale = torch.tensor(cfg.scale_xyz_axisangle, device=self.device, dtype=torch.float32)
@@ -197,19 +190,6 @@ class RelCartesianOSCAction(ActionTerm):
 
         task_cmd = self._kp * pose_error + self._kd * (-ee_vel)
         jacobian_t = jacobian.transpose(-1, -2)
-
-        if self._use_task_space_inertia:
-            mass_matrix = self._asset.root_physx_view.get_generalized_mass_matrices()
-            arm_mass_matrix = mass_matrix[:, self._joint_ids, :][:, :, self._joint_ids]
-
-            mass_matrix_inv_j_t = torch.linalg.solve(arm_mass_matrix, jacobian_t)
-            lambda_inv = torch.bmm(jacobian, mass_matrix_inv_j_t)
-            eye = torch.eye(6, device=self.device, dtype=jacobian.dtype).unsqueeze(0)
-            lambda_inv = lambda_inv + self._task_space_inertia_damping * eye
-            task_wrench = torch.linalg.solve(lambda_inv, task_cmd.unsqueeze(-1)).squeeze(-1)
-        else:
-            task_wrench = task_cmd
-
-        joint_torques = torch.bmm(jacobian_t, task_wrench.unsqueeze(-1)).squeeze(-1)
+        joint_torques = torch.bmm(jacobian_t, task_cmd.unsqueeze(-1)).squeeze(-1)
         joint_torques_clamped = torch.clamp(joint_torques, -self._torque_max, self._torque_max)
         return joint_torques, joint_torques_clamped
