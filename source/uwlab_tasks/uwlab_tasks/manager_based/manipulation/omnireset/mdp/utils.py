@@ -30,7 +30,7 @@ from pxr import UsdGeom
 from pytorch3d.ops import sample_farthest_points, sample_points_from_meshes
 from pytorch3d.structures import Meshes
 
-from uwlab_assets import UWLAB_CLOUD_ASSETS_DIR
+from uwlab_assets import UWLAB_ASSETS_EXT_DIR, UWLAB_CLOUD_ASSETS_DIR
 
 from .rigid_object_hasher import RigidObjectHasher
 
@@ -362,19 +362,59 @@ def safe_retrieve_file_path(url: str, download_dir: str | None = None) -> str:
 
 
 @functools.cache
-def read_metadata_from_usd_directory(usd_path: str) -> dict:
-    """Read metadata from metadata.yaml in the same directory as the USD file.
-
-    Results are memoised per *usd_path* so each asset's metadata is
-    downloaded and parsed at most once per process.
-    """
+def _read_metadata_from_usd_directory_with_paths(usd_path: str) -> tuple[dict, str, str]:
+    """Read metadata and return both requested and resolved metadata paths."""
     usd_dir = os.path.dirname(usd_path)
     metadata_path = os.path.join(usd_dir, "metadata.yaml")
     local_path = safe_retrieve_file_path(metadata_path, download_dir=get_temp_dir())
     with open(local_path) as f:
         metadata_file = yaml.safe_load(f)
 
+    return metadata_file, metadata_path, local_path
+
+
+def read_metadata_from_usd_directory(usd_path: str) -> dict:
+    """Read metadata from metadata.yaml in the same directory as the USD file.
+
+    Results are memoised per *usd_path* so each asset's metadata is
+    downloaded and parsed at most once per process.
+    """
+    metadata_file, _, _ = _read_metadata_from_usd_directory_with_paths(usd_path)
+
     return metadata_file
+
+
+def read_metadata_from_usd_directory_with_paths(usd_path: str) -> tuple[dict, str, str]:
+    """Read metadata and include the requested metadata path and resolved local path."""
+    return _read_metadata_from_usd_directory_with_paths(usd_path)
+
+
+def _local_robot_metadata_path(usd_path: str) -> str | None:
+    usd_name = PurePosixPath(urlparse(usd_path).path).name
+    if usd_name != "ur5e_robotiq2f140.usd":
+        return None
+    return os.path.join(
+        UWLAB_ASSETS_EXT_DIR,
+        "uwlab_assets",
+        "robots",
+        "ur5e_robotiq_gripper",
+        "usd",
+        "metadata.yaml",
+    )
+
+
+@functools.cache
+def read_robot_sysid_metadata_with_paths(usd_path: str) -> tuple[dict, str, str]:
+    """Read robot sysid metadata, preferring the source-tree metadata for local robot calibration."""
+    metadata_path = _local_robot_metadata_path(usd_path)
+    if metadata_path is None:
+        return _read_metadata_from_usd_directory_with_paths(usd_path)
+
+    local_path = os.path.abspath(metadata_path)
+    with open(local_path) as f:
+        metadata_file = yaml.safe_load(f)
+
+    return metadata_file, local_path, local_path
 
 
 def object_name_from_usd(usd_path: str) -> str:

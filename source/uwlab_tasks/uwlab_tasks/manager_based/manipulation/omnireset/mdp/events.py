@@ -1704,13 +1704,24 @@ class randomize_arm_from_sysid(ManagerTermBase):
         self.joint_ids = self.robot.find_joints(cfg.params["joint_names"])[0]
         self.actuator_name: str = cfg.params["actuator_name"]
 
-        # Load sysid from robot metadata (co-located with USD)
-        metadata = utils.read_metadata_from_usd_directory(self.robot.cfg.spawn.usd_path)
+        # Load sysid from local robot metadata while keeping the robot USD path cloud-backed.
+        metadata, metadata_path, local_metadata_path = utils.read_robot_sysid_metadata_with_paths(
+            self.robot.cfg.spawn.usd_path
+        )
         sysid = metadata["sysid"]
         self.armature = sysid["armature"]
         self.static_friction = sysid["static_friction"]
         self.dynamic_ratio = sysid["dynamic_ratio"]
         self.viscous_friction = sysid["viscous_friction"]
+
+        print(
+            "[randomize_arm_from_sysid] loaded physics parameters\n"
+            f"  robot_usd_path: {self.robot.cfg.spawn.usd_path}\n"
+            f"  metadata_path: {metadata_path}\n"
+            f"  local_metadata_path: {local_metadata_path}\n"
+            f"  sysid: {sysid}",
+            flush=True,
+        )
 
         # ADR progress: 0 = armature/friction are 0, 1 = full sysid randomization
         self.scale_progress: float = cfg.params.get("initial_scale_progress", 0.0)
