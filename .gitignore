@@ -72,6 +72,7 @@ tests/
 # Docker history
 .uw-lab-docker-history
 
+*.pt
 Datasets
 Datasets*
 pretrained_checkpoints
