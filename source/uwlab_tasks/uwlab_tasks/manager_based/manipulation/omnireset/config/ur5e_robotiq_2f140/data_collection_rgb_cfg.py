@@ -111,7 +111,7 @@ class DataCollectionRGBObjectSceneCfg(RlStateSceneCfg):
             convention="opengl",
         ),
         data_types=["rgb"],
-        spawn=sim_utils.PinholeCameraCfg(focal_length=20.02),
+        spawn=sim_utils.PinholeCameraCfg(focal_length=20.02, clipping_range=(0.03, 1e6)),
     )
 
 

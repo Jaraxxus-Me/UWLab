@@ -6,9 +6,9 @@
 """Configuration for the UR5e + Robotiq 2F-140 robot.
 
 Mirrors the 2F-85 configuration so tasks can swap between the two grippers
-by changing only the articulation cfg import. The full robot and standalone
-gripper USDs are self-contained local assets that live alongside this module
-under ``usd/``.
+by changing only the articulation cfg import. The full robot USD is resolved
+from the project custom cloud assets path, with the local ``usd/`` copy used
+only as a fallback when custom cloud assets are disabled.
 
 The following configurations are available:
 
@@ -29,13 +29,9 @@ from uwlab_assets import custom_cloud_path
 
 _USD_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "usd")
 _LOCAL_USD_PATH = os.path.join(_USD_DIR, "ur5e_robotiq2f140.usd")
-_USD_PATH = (
-    _LOCAL_USD_PATH
-    if os.path.isfile(_LOCAL_USD_PATH)
-    else custom_cloud_path(
-        "Robots/UniversalRobots/Ur5eRobotiq2f140/ur5e_robotiq2f140.usd",
-        _LOCAL_USD_PATH,
-    )
+_USD_PATH = custom_cloud_path(
+    "Robots/UniversalRobots/Ur5eRobotiq2f140/ur5e_robotiq2f140.usd",
+    _LOCAL_USD_PATH,
 )
 _ARM_ONLY_USD_PATH = os.path.join(_USD_DIR, "ur5e_arm_only_omini.usd")
 _GRIPPER_USD_PATH = custom_cloud_path(

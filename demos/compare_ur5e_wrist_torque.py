@@ -3,7 +3,7 @@
 #
 # SPDX-License-Identifier: BSD-3-Clause
 
-"""Diagnose UR5e OSC wrist torques for the patched local 2F-140 USD.
+"""Diagnose UR5e OSC wrist torques for the configured 2F-140 USD.
 
 The script creates a task with one environment, disables reset/randomization
 events, writes the requested six UR5e arm qpos/qvel, and drives wrist_3_link
@@ -27,13 +27,7 @@ from pathlib import Path
 from isaaclab.app import AppLauncher
 
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_LOCAL_2F140_USD = (
-    REPO_ROOT
-    / "source/uwlab_assets/uwlab_assets/robots/ur5e_robotiq_gripper/usd/ur5e_robotiq2f140.usd"
-)
-
-parser = argparse.ArgumentParser(description="Diagnose UR5e wrist OSC torques for the patched local 2F-140 USD.")
+parser = argparse.ArgumentParser(description="Diagnose UR5e wrist OSC torques for the configured 2F-140 USD.")
 parser.add_argument(
     "--task_a",
     type=str,
@@ -49,10 +43,10 @@ parser.add_argument(
 parser.add_argument(
     "--local_2f140_usd",
     type=str,
-    default=str(DEFAULT_LOCAL_2F140_USD),
+    default="",
     help=(
-        "Local 2F-140 full-robot USD used to override the parsed task config. "
-        "Pass an empty string to keep the task's configured path."
+        "Optional local 2F-140 full-robot USD used to override the parsed task config. "
+        "By default, the task's configured cloud path is used."
     ),
 )
 parser.add_argument(
