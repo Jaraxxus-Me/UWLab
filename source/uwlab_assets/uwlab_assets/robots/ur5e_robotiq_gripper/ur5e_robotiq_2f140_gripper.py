@@ -28,9 +28,14 @@ from isaaclab.assets.articulation import ArticulationCfg
 from uwlab_assets import custom_cloud_path
 
 _USD_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "usd")
-_USD_PATH = custom_cloud_path(
-    "Robots/UniversalRobots/Ur5eRobotiq2f140/ur5e_robotiq2f140.usd",
-    os.path.join(_USD_DIR, "ur5e_robotiq2f140.usd"),
+_LOCAL_USD_PATH = os.path.join(_USD_DIR, "ur5e_robotiq2f140.usd")
+_USD_PATH = (
+    _LOCAL_USD_PATH
+    if os.path.isfile(_LOCAL_USD_PATH)
+    else custom_cloud_path(
+        "Robots/UniversalRobots/Ur5eRobotiq2f140/ur5e_robotiq2f140.usd",
+        _LOCAL_USD_PATH,
+    )
 )
 _ARM_ONLY_USD_PATH = os.path.join(_USD_DIR, "ur5e_arm_only_omini.usd")
 _GRIPPER_USD_PATH = custom_cloud_path(

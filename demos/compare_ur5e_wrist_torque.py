@@ -3,12 +3,14 @@
 #
 # SPDX-License-Identifier: BSD-3-Clause
 
-"""Compare UR5e OSC wrist torques across two robot USD/task configs.
+"""Diagnose UR5e OSC wrist torques for the patched local 2F-140 USD.
 
-The script creates each task with one environment, disables reset/randomization
-events, writes the same six UR5e arm qpos/qvel, and drives wrist_3_link toward
-the same base-frame goal pose.  For each policy step it prints the OSC torque
+The script creates a task with one environment, disables reset/randomization
+events, writes the requested six UR5e arm qpos/qvel, and drives wrist_3_link
+toward a base-frame goal pose.  For each policy step it prints the OSC torque
 before clamp, after clamp, and the actuator's applied torque after the env step.
+
+An optional second task can still be supplied with --task_b for comparison.
 
 Example:
     python demos/compare_ur5e_wrist_torque.py --headless --steps 40
@@ -20,24 +22,47 @@ import argparse
 import functools
 import math
 from dataclasses import dataclass
+from pathlib import Path
 
 from isaaclab.app import AppLauncher
 
 
-parser = argparse.ArgumentParser(description="Compare UR5e wrist OSC torques for two task/USD configs.")
+REPO_ROOT = Path(__file__).resolve().parents[1]
+DEFAULT_LOCAL_2F140_USD = (
+    REPO_ROOT
+    / "source/uwlab_assets/uwlab_assets/robots/ur5e_robotiq_gripper/usd/ur5e_robotiq2f140.usd"
+)
+
+parser = argparse.ArgumentParser(description="Diagnose UR5e wrist OSC torques for the patched local 2F-140 USD.")
 parser.add_argument(
     "--task_a",
     type=str,
     default="OmniReset-Ur5eRobotiq2f140-RelCartesianOSC-State-Play-v0",
-    help="First registered gym task ID. Defaults to the working 2F-85 full-gripper task.",
+    help="Registered gym task ID for the main diagnostic case. Defaults to the 2F-140 full-gripper task.",
 )
 parser.add_argument(
     "--task_b",
     type=str,
-    default="OmniReset-Ur5eRobotiq2f140-RelCartesianOSC-State-Play-v0",
-    help="Second registered gym task ID. Defaults to the 2F-140 arm-only debug task.",
+    default="",
+    help="Optional second registered gym task ID to compare against task_a. Empty means run only task_a.",
 )
-parser.add_argument("--steps", type=int, default=40, help="Number of policy steps to run per task.")
+parser.add_argument(
+    "--local_2f140_usd",
+    type=str,
+    default=str(DEFAULT_LOCAL_2F140_USD),
+    help=(
+        "Local 2F-140 full-robot USD used to override the parsed task config. "
+        "Pass an empty string to keep the task's configured path."
+    ),
+)
+parser.add_argument(
+    "--steps", type=int, default=40, help="Number of policy steps to run per task."
+)
+parser.add_argument(
+    "--keep_open",
+    action="store_true",
+    help="In GUI mode, keep the Isaac Sim window open after the diagnostic steps until the window is closed.",
+)
 parser.add_argument("--print_every", type=int, default=1, help="Print every N policy steps.")
 parser.add_argument(
     "--check_jacobian",
@@ -126,6 +151,8 @@ from uwlab_tasks.manager_based.manipulation.omnireset.mdp.actions.task_space_act
 print = functools.partial(print, flush=True)  # type: ignore[assignment]
 
 
+_LIVE_ENVS = []
+
 ARM_JOINT_NAMES = [
     "shoulder_pan_joint",
     "shoulder_lift_joint",
@@ -181,9 +208,34 @@ def _disable_rewards(env_cfg) -> None:
             setattr(env_cfg.rewards, name, None)
 
 
-def _make_env(task_name: str, device: str):
-    omni.usd.get_context().new_stage()
+def _resolve_optional_local_usd(path: str, label: str) -> str | None:
+    if not path:
+        return None
+    resolved = Path(path).expanduser().resolve()
+    if not resolved.is_file():
+        raise FileNotFoundError(f"{label} local USD does not exist: {resolved}")
+    return str(resolved)
+
+
+def _override_robot_usd_with_local(task_name: str, env_cfg) -> None:
+    task_name_lower = task_name.lower()
+    if "2f140" not in task_name_lower:
+        return
+    local_usd = _resolve_optional_local_usd(args_cli.local_2f140_usd, "2F-140")
+    if local_usd is None:
+        return
+    if not hasattr(env_cfg, "scene") or not hasattr(env_cfg.scene, "robot"):
+        raise RuntimeError(f"Task {task_name} has no scene.robot config to override.")
+    if not hasattr(env_cfg.scene.robot, "spawn") or not hasattr(env_cfg.scene.robot.spawn, "usd_path"):
+        raise RuntimeError(f"Task {task_name} scene.robot has no spawn.usd_path to override.")
+    env_cfg.scene.robot.spawn.usd_path = local_usd
+
+
+def _make_env(task_name: str, device: str, *, clear_stage: bool = False):
+    if clear_stage:
+        omni.usd.get_context().new_stage()
     env_cfg = parse_env_cfg(task_name, device=device, num_envs=1)
+    _override_robot_usd_with_local(task_name, env_cfg)
     _disable_random_events(env_cfg)
     _disable_rewards(env_cfg)
     policy_dt = float(env_cfg.sim.dt) * int(env_cfg.decimation)
@@ -338,8 +390,10 @@ def _quat_from_axis_angle(axis_angle: torch.Tensor) -> torch.Tensor:
     return torch.cat([torch.cos(half_angle), axis * torch.sin(half_angle)], dim=-1)
 
 
-def _run_case(task_name: str, device: str, start_qpos: torch.Tensor, goal_pose=None):
-    env = _make_env(task_name, device)
+def _run_case(
+    task_name: str, device: str, start_qpos: torch.Tensor, goal_pose=None, *, clear_stage: bool = False
+):
+    env = _make_env(task_name, device, clear_stage=clear_stage)
     robot = env.unwrapped.scene["robot"]
     arm_joint_ids = _write_start_state(env, start_qpos)
     arm_term = env.unwrapped.action_manager._terms.get("arm")
@@ -423,18 +477,38 @@ def _run_case(task_name: str, device: str, start_qpos: torch.Tensor, goal_pose=N
     print(f"  final_rot_err: {float(final_rot_err_aa.norm(dim=-1)[0]):.6f} rad")
 
     goal_pose = (goal_pos_b.detach().cpu(), goal_quat_b.detach().cpu())
-    env.close()
-    return goal_pose
+    return goal_pose, env
 
 
 def main():
+    global _LIVE_ENVS
     device = args_cli.device if args_cli.device is not None else "cuda:0"
     start_qpos = torch.tensor(args_cli.start_qpos, device=device, dtype=torch.float32)
 
     print("[INFO] Identical start qpos:", [float(x) for x in start_qpos.detach().cpu()])
     print("[INFO] Randomization/reset-state events disabled for this diagnostic.")
-    goal_pose = _run_case(args_cli.task_a, device, start_qpos, goal_pose=None)
-    _run_case(args_cli.task_b, device, start_qpos, goal_pose=goal_pose)
+    try:
+        goal_pose, env = _run_case(args_cli.task_a, device, start_qpos, goal_pose=None)
+        _LIVE_ENVS.append(env)
+        if args_cli.task_b:
+            if not bool(args_cli.headless):
+                raise RuntimeError("--task_b comparison currently requires --headless to avoid GUI stale-view callbacks.")
+            _LIVE_ENVS.pop().close()
+            goal_pose, env = _run_case(args_cli.task_b, device, start_qpos, goal_pose=goal_pose, clear_stage=True)
+            _LIVE_ENVS.append(env)
+        else:
+            print("")
+            print("[INFO] No --task_b provided; single-case 2F-140 diagnostic complete.")
+
+        if args_cli.keep_open and not bool(args_cli.headless):
+            print("[INFO] Keeping GUI open. Close the Isaac Sim window to exit.")
+            while simulation_app.is_running():
+                simulation_app.update()
+    finally:
+        if bool(args_cli.headless):
+            for env in reversed(_LIVE_ENVS):
+                env.close()
+            _LIVE_ENVS.clear()
 
 
 if __name__ == "__main__":

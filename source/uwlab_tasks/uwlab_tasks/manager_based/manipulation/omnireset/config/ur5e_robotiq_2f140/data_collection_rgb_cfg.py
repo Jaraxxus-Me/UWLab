@@ -78,12 +78,12 @@ class DataCollectionRGBObjectSceneCfg(RlStateSceneCfg):
         height=240,
         width=320,
         offset=TiledCameraCfg.OffsetCfg(
-            pos=(-1.0770121, 0.1679045, 0.4486344),
-            rot=(0.47107948, 0.25072644, -0.46613815, -0.70564552),
+            pos=(-0.9101819, 0.0358507, 0.4750194),
+            rot=(0.67165214, 0.23014157, -0.25002852, -0.65833426),
             convention="opengl",
         ),
         data_types=["rgb"],
-        spawn=sim_utils.PinholeCameraCfg(focal_length=13.20),
+        spawn=sim_utils.PinholeCameraCfg(focal_length=24.40),
     )
 
     side_camera = TiledCameraCfg(
@@ -92,12 +92,12 @@ class DataCollectionRGBObjectSceneCfg(RlStateSceneCfg):
         height=240,
         width=320,
         offset=TiledCameraCfg.OffsetCfg(
-            pos=(-0.8323904, -0.5877843, 0.2805111),
-            rot=(0.77676798, 0.51336143, -0.22122445, -0.29008842),
+            pos=(-0.5430160, -0.2917557, 0.4118886),
+            rot=(0.93103116, 0.35759344, -0.06975901, 0.02101393),
             convention="opengl",
         ),
         data_types=["rgb"],
-        spawn=sim_utils.PinholeCameraCfg(focal_length=20.10),
+        spawn=sim_utils.PinholeCameraCfg(focal_length=24.40),
     )
 
     wrist_camera = TiledCameraCfg(
@@ -106,12 +106,12 @@ class DataCollectionRGBObjectSceneCfg(RlStateSceneCfg):
         height=240,
         width=320,
         offset=TiledCameraCfg.OffsetCfg(
-            pos=(0.0182505, -0.00408447, -0.0689107),
-            rot=(0.34254336, -0.61819255, -0.6160212, 0.347879),
+            pos=(0.0700000, -0.0390845, 0.0100000),
+            rot=(0.02827673, 0.70654118, 0.70678859, -0.02121002),
             convention="opengl",
         ),
         data_types=["rgb"],
-        spawn=sim_utils.PinholeCameraCfg(focal_length=24.55),
+        spawn=sim_utils.PinholeCameraCfg(focal_length=20.02),
     )
 
 
@@ -126,8 +126,8 @@ class BaseRGBEventCfg(FinetuneEvalEventCfg):
         params={
             "camera_path_template": "/World/envs/env_{}/Robot/rgb_front_camera",
             # Base values from TiledCameraCfg
-            "base_position": (-1.0770121, 0.1679045, 0.4486344),
-            "base_rotation": (0.47107948, 0.25072644, -0.46613815, -0.70564552),
+            "base_position": (-0.9101819, 0.0358507, 0.4750194),
+            "base_rotation": (0.67165214, 0.23014157, -0.25002852, -0.65833426),
             # Delta ranges for position (in meters)
             "position_deltas": {"x": (-0.05, 0.05), "y": (-0.05, 0.05), "z": (-0.05, 0.05)},
             # Delta ranges for euler angles (in degrees)
@@ -140,7 +140,7 @@ class BaseRGBEventCfg(FinetuneEvalEventCfg):
         mode="reset",
         params={
             "camera_path_template": "/World/envs/env_{}/Robot/rgb_front_camera",
-            "focal_length_range": (11.2, 15.2),
+            "focal_length_range": (22.4, 26.4),
         },
     )
 
@@ -150,8 +150,8 @@ class BaseRGBEventCfg(FinetuneEvalEventCfg):
         params={
             "camera_path_template": "/World/envs/env_{}/Robot/rgb_side_camera",
             # Base values from TiledCameraCfg
-            "base_position": (-0.8323904, -0.5877843, 0.2805111),
-            "base_rotation": (0.77676798, 0.51336143, -0.22122445, -0.29008842),
+            "base_position": (-0.5430160, -0.2917557, 0.4118886),
+            "base_rotation": (0.93103116, 0.35759344, -0.06975901, 0.02101393),
             # Delta ranges for position (in meters)
             "position_deltas": {"x": (-0.05, 0.05), "y": (-0.05, 0.05), "z": (-0.05, 0.05)},
             # Delta ranges for euler angles (in degrees)
@@ -162,7 +162,7 @@ class BaseRGBEventCfg(FinetuneEvalEventCfg):
     randomize_side_camera_focal_length = EventTerm(
         func=task_mdp.randomize_camera_focal_length,
         mode="reset",
-        params={"camera_path_template": "/World/envs/env_{}/Robot/rgb_side_camera", "focal_length_range": (18.1, 22.1)},
+        params={"camera_path_template": "/World/envs/env_{}/Robot/rgb_side_camera", "focal_length_range": (22.4, 26.4)},
     )
 
     randomize_wrist_camera = EventTerm(
@@ -171,8 +171,8 @@ class BaseRGBEventCfg(FinetuneEvalEventCfg):
         params={
             "camera_path_template": "/World/envs/env_{}/Robot/ee_link/robotiq_base_link/rgb_wrist_camera",
             # Base values from TiledCameraCfg
-            "base_position": (0.0182505, -0.00408447, -0.0689107),
-            "base_rotation": (0.34254336, -0.61819255, -0.6160212, 0.347879),
+            "base_position": (0.0700000, -0.0390845, 0.0100000),
+            "base_rotation": (0.02827673, 0.70654118, 0.70678859, -0.02121002),
             # Delta ranges for position (in meters)
             "position_deltas": {"x": (-0.01, 0.01), "y": (-0.01, 0.01), "z": (-0.01, 0.01)},
             # Delta ranges for euler angles (in degrees)
@@ -185,7 +185,7 @@ class BaseRGBEventCfg(FinetuneEvalEventCfg):
         mode="reset",
         params={
             "camera_path_template": "/World/envs/env_{}/Robot/ee_link/robotiq_base_link/rgb_wrist_camera",
-            "focal_length_range": (23.55, 25.55),  # Range from wide-angle to telephoto
+            "focal_length_range": (19.02, 21.02),  # Range from wide-angle to telephoto
         },
     )
 
@@ -201,7 +201,7 @@ class RGBEventCfg(BaseRGBEventCfg):
         params={
             "asset_cfg": SceneEntityCfg("robot"),
             "event_name": "randomize_wrist_mount_event",
-            "mesh_names": ["robotiq_base_link/visuals/D415_to_Robotiq_Mount"],
+            "mesh_names": ["ee_link/robotiq_base_link/visuals/adapter"],
             "texture_prob": 0.5,
             "texture_config_path": str(Path(__file__).parent / "resources" / "texture_paths.yaml"),
             "diffuse_tint_range": ((0.0, 0.0, 0.0), (1.0, 1.0, 1.0)),
@@ -665,7 +665,7 @@ class OODRGBEventCfg(BaseRGBEventCfg):
         params={
             "asset_cfg": SceneEntityCfg("robot"),
             "event_name": "randomize_wrist_mount_event",
-            "mesh_names": ["robotiq_base_link/visuals/D415_to_Robotiq_Mount"],
+            "mesh_names": ["ee_link/robotiq_base_link/visuals/adapter"],
             "texture_prob": 0.5,
             "texture_config_path": str(Path(__file__).parent / "resources" / "texture_paths_ood.yaml"),
             "diffuse_tint_range": ((0.0, 0.0, 0.0), (1.0, 1.0, 1.0)),

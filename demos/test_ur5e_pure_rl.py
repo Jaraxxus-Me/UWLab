@@ -31,6 +31,15 @@ Usage (activate the project venv first):
         env.scene.insertive_object=block \
         env.scene.receptive_object=box \
         env.events.reset_from_reset_states.params.dataset_dir=./Datasets/OmniResetRealWorkspace
+
+    # Finetuned
+    python scripts/reinforcement_learning/rsl_rl/play.py \
+        --task OmniReset-Ur5eRobotiq2f140-RelCartesianOSC-State-Finetune-Play-v0 \
+        --num_envs 4 \
+        --checkpoint logs/rsl_rl/ur5e_robotiq_2f140_omnireset_agent/0503_after_adr/model_4900.pt \
+        env.scene.insertive_object=block \
+        env.scene.receptive_object=box \
+        env.events.reset_from_reset_states.params.dataset_dir=./Datasets/OmniResetRealWorkspace
 """
 
 """Launch Isaac Sim Simulator first."""
