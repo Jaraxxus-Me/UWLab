@@ -135,15 +135,85 @@ class CameraAlignSceneCfg(RlStateSceneCfg):
         height=480,
         width=640,
         offset=TiledCameraCfg.OffsetCfg(
-            pos=(0.0700000, -0.0390845, 0.0100000),
-            rot=(0.02827673, 0.70654118, 0.70678859, -0.02121002),
+            pos=(-0.06192727, -0.08342348, -0.02054465),
+            rot=(0.02589054,  0.99876904,  0.00439874, -0.04208001),
             convention="opengl",
         ),
         data_types=["rgb"],
         spawn=sim_utils.PinholeCameraCfg(focal_length=20.02, clipping_range=(0.03, 1e6)),
     )
 
+# Calibration:
+#   Path: /home/bowenli2/CoRL2026/diffusion_policy/scripts/sim2real/perception/calibrations/front.json
+#   Camera serial: 207122078046
+#   Image size: 640 x 480
 
+# Policy sees current joint angles:
+#   arm_joint_pos [rad]:  0.20109713, -1.55775622, -1.83930719, -1.33317194,  1.56346416, -1.36284811
+#   arm_joint_pos [deg]:  11.52201687, -89.25285672, -105.38453916, -76.38512525,  89.57989806, -78.08544465
+
+# Policy sees current EE pose in Isaac/sim base:
+#   Position (x, y, z): -0.48972641,  0.03756944,  0.38740799
+#   Quaternion [w, x, y, z]:  0.00766793,  0.00428674,  0.99994664,  0.00543577
+#   Axis-angle [rx, ry, rz]:  0.01340184,  3.12618172,  0.01699411
+
+# Isaac Sim camera pose in Isaac/sim base:
+#   Position (x, y, z): -0.88067880,  0.03436852,  0.42247376
+#   Quaternion [w, x, y, z]: -0.66482655, -0.23723004,  0.22472031,  0.67173532
+#   Axis-angle [rx, ry, rz]: -1.45962521,  1.38265552,  4.13304234
+
+# Isaac Sim camera pose in policy EE frame:
+#   Position (x, y, z):  0.39032824, -0.00613616, -0.04110765
+#   Quaternion [w, x, y, z]:  0.22224493, -0.66944707,  0.67068330, -0.22941604
+#   Axis-angle [rx, ry, rz]: -1.84931158,  1.85272659, -0.63374947
+
+# Calibration:
+#   Path: /home/bowenli2/CoRL2026/diffusion_policy/scripts/sim2real/perception/calibrations/side.json
+#   Camera serial: 207222070875
+#   Image size: 640 x 480
+
+# Policy sees current joint angles:
+#   arm_joint_pos [rad]:  0.20106630, -1.55774898, -1.83931911, -1.33321788,  1.56346393, -1.36286718
+#   arm_joint_pos [deg]:  11.52025041, -89.25244221, -105.38522218, -76.38775743,  89.57988440, -78.08653748
+
+# Policy sees current EE pose in Isaac/sim base:
+#   Position (x, y, z): -0.48971675,  0.03758629,  0.38740121
+#   Quaternion [w, x, y, z]:  0.00769282,  0.00429252,  0.99994639,  0.00544086
+#   Axis-angle [rx, ry, rz]:  0.01341970,  3.12613178,  0.01700976
+
+# Isaac Sim camera pose in Isaac/sim base:
+#   Position (x, y, z): -0.58335175, -0.31205614,  0.41541872
+#   Quaternion [w, x, y, z]:  0.93228655,  0.35914301, -0.02178747, -0.03719405
+#   Axis-angle [rx, ry, rz]:  0.73495082, -0.04458590, -0.07611396
+
+# Isaac Sim camera pose in policy EE frame:
+#   Position (x, y, z):  0.09015993, -0.35009811, -0.03323889
+#   Quaternion [w, x, y, z]:  0.01327512, -0.03583448,  0.93451788, -0.35385871
+#   Axis-angle [rx, ry, rz]: -0.11163573,  2.91131865, -1.10238175
+
+# Calibration:
+#   Path: /home/bowenli2/CoRL2026/diffusion_policy/scripts/sim2real/perception/calibrations/wrist.json
+#   Camera serial: 752112070737
+#   Image size: 640 x 480
+
+# Policy sees current joint angles:
+#   arm_joint_pos [rad]:  0.20112464, -1.55775261, -1.83931553, -1.33318608,  1.56344867, -1.36288292
+#   arm_joint_pos [deg]:  11.52359293, -89.25265026, -105.38501727, -76.38593548,  89.57901013, -78.08743906
+
+# Policy sees current EE pose in Isaac/sim base:
+#   Position (x, y, z): -0.48972390,  0.03755827,  0.38740433
+#   Quaternion [w, x, y, z]:  0.00767563,  0.00425547,  0.99994666,  0.00544526
+#   Axis-angle [rx, ry, rz]:  0.01330403,  3.12616659,  0.01702369
+
+# Isaac Sim camera pose in Isaac/sim base:
+#   Position (x, y, z): -0.45246176, -0.04559970,  0.39201947
+#   Quaternion [w, x, y, z]:  0.02041356,  0.00118244, -0.03714957,  0.99910049
+#   Axis-angle [rx, ry, rz]:  0.00366723, -0.11521602,  3.09861922
+
+# Isaac Sim camera pose in policy EE frame:
+#   Position (x, y, z): -0.03804170, -0.08278546, -0.00494076
+#   Quaternion [w, x, y, z]:  0.03154552,  0.99932729,  0.01645241, -0.00889803
+#   Axis-angle [rx, ry, rz]:  3.07795205,  0.05067383, -0.02740615
 # ---------------------------------------------------------------------------
 # Minimal MDP (camera alignment only needs RGB obs + joint_pos action)
 # ---------------------------------------------------------------------------
