@@ -29,6 +29,27 @@ from .rl_state_cfg import (
     Ur5eRobotiq2f140RlStateCfg,
 )
 
+RGB_FRONT_CAMERA_PRIM_PATH = "{ENV_REGEX_NS}/Robot/rgb_front_camera"
+RGB_FRONT_CAMERA_PATH_TEMPLATE = "/World/envs/env_{}/Robot/rgb_front_camera"
+RGB_FRONT_CAMERA_POSITION = (-0.8706788, 0.0243685, 0.4224738)
+RGB_FRONT_CAMERA_ROTATION = (0.66817688, 0.23835066, -0.22353137, -0.66840283)
+RGB_FRONT_CAMERA_FOCAL_LENGTH = 25.40
+RGB_FRONT_CAMERA_FOCAL_LENGTH_RANGE = (RGB_FRONT_CAMERA_FOCAL_LENGTH - 2.0, RGB_FRONT_CAMERA_FOCAL_LENGTH + 2.0)
+
+RGB_SIDE_CAMERA_PRIM_PATH = "{ENV_REGEX_NS}/Robot/rgb_side_camera"
+RGB_SIDE_CAMERA_PATH_TEMPLATE = "/World/envs/env_{}/Robot/rgb_side_camera"
+RGB_SIDE_CAMERA_POSITION = (-0.5983517, -0.3370562, 0.4304187)
+RGB_SIDE_CAMERA_ROTATION = (0.92958434, 0.36533178, -0.03832522, -0.03060744)
+RGB_SIDE_CAMERA_FOCAL_LENGTH = 24.40
+RGB_SIDE_CAMERA_FOCAL_LENGTH_RANGE = (RGB_SIDE_CAMERA_FOCAL_LENGTH - 2.0, RGB_SIDE_CAMERA_FOCAL_LENGTH + 2.0)
+
+RGB_WRIST_CAMERA_PRIM_PATH = "{ENV_REGEX_NS}/Robot/wrist_3_link/rgb_wrist_camera"
+RGB_WRIST_CAMERA_PATH_TEMPLATE = "/World/envs/env_{}/Robot/wrist_3_link/rgb_wrist_camera"
+RGB_WRIST_CAMERA_POSITION = (-0.0230417, -0.0827855, -0.0249408)
+RGB_WRIST_CAMERA_ROTATION = (0.02893693, 0.99953394, 0.00879001, -0.00415913)
+RGB_WRIST_CAMERA_FOCAL_LENGTH = 25.50
+RGB_WRIST_CAMERA_FOCAL_LENGTH_RANGE = (RGB_WRIST_CAMERA_FOCAL_LENGTH - 1.0, RGB_WRIST_CAMERA_FOCAL_LENGTH + 1.0)
+
 
 @configclass
 class DataCollectionRGBObjectSceneCfg(RlStateSceneCfg):
@@ -73,45 +94,45 @@ class DataCollectionRGBObjectSceneCfg(RlStateSceneCfg):
     )
 
     front_camera = TiledCameraCfg(
-        prim_path="{ENV_REGEX_NS}/Robot/rgb_front_camera",
+        prim_path=RGB_FRONT_CAMERA_PRIM_PATH,
         update_period=0,
         height=240,
         width=320,
         offset=TiledCameraCfg.OffsetCfg(
-            pos=(-0.9101819, 0.0358507, 0.4750194),
-            rot=(0.67165214, 0.23014157, -0.25002852, -0.65833426),
+            pos=RGB_FRONT_CAMERA_POSITION,
+            rot=RGB_FRONT_CAMERA_ROTATION,
             convention="opengl",
         ),
         data_types=["rgb"],
-        spawn=sim_utils.PinholeCameraCfg(focal_length=24.40),
+        spawn=sim_utils.PinholeCameraCfg(focal_length=RGB_FRONT_CAMERA_FOCAL_LENGTH),
     )
 
     side_camera = TiledCameraCfg(
-        prim_path="{ENV_REGEX_NS}/Robot/rgb_side_camera",
+        prim_path=RGB_SIDE_CAMERA_PRIM_PATH,
         update_period=0,
         height=240,
         width=320,
         offset=TiledCameraCfg.OffsetCfg(
-            pos=(-0.5430160, -0.2917557, 0.4118886),
-            rot=(0.93103116, 0.35759344, -0.06975901, 0.02101393),
+            pos=RGB_SIDE_CAMERA_POSITION,
+            rot=RGB_SIDE_CAMERA_ROTATION,
             convention="opengl",
         ),
         data_types=["rgb"],
-        spawn=sim_utils.PinholeCameraCfg(focal_length=24.40),
+        spawn=sim_utils.PinholeCameraCfg(focal_length=RGB_SIDE_CAMERA_FOCAL_LENGTH),
     )
 
     wrist_camera = TiledCameraCfg(
-        prim_path="{ENV_REGEX_NS}/Robot/ee_link/robotiq_base_link/rgb_wrist_camera",
+        prim_path=RGB_WRIST_CAMERA_PRIM_PATH,
         update_period=0,
         height=240,
         width=320,
         offset=TiledCameraCfg.OffsetCfg(
-            pos=(0.0700000, -0.0390845, 0.0100000),
-            rot=(0.02827673, 0.70654118, 0.70678859, -0.02121002),
+            pos=RGB_WRIST_CAMERA_POSITION,
+            rot=RGB_WRIST_CAMERA_ROTATION,
             convention="opengl",
         ),
         data_types=["rgb"],
-        spawn=sim_utils.PinholeCameraCfg(focal_length=20.02, clipping_range=(0.03, 1e6)),
+        spawn=sim_utils.PinholeCameraCfg(focal_length=RGB_WRIST_CAMERA_FOCAL_LENGTH, clipping_range=(0.07, 1e6)),
     )
 
 
@@ -124,10 +145,10 @@ class BaseRGBEventCfg(FinetuneEvalEventCfg):
         func=task_mdp.randomize_tiled_cameras,
         mode="reset",
         params={
-            "camera_path_template": "/World/envs/env_{}/Robot/rgb_front_camera",
+            "camera_path_template": RGB_FRONT_CAMERA_PATH_TEMPLATE,
             # Base values from TiledCameraCfg
-            "base_position": (-0.9101819, 0.0358507, 0.4750194),
-            "base_rotation": (0.67165214, 0.23014157, -0.25002852, -0.65833426),
+            "base_position": RGB_FRONT_CAMERA_POSITION,
+            "base_rotation": RGB_FRONT_CAMERA_ROTATION,
             # Delta ranges for position (in meters)
             "position_deltas": {"x": (-0.05, 0.05), "y": (-0.05, 0.05), "z": (-0.05, 0.05)},
             # Delta ranges for euler angles (in degrees)
@@ -139,8 +160,8 @@ class BaseRGBEventCfg(FinetuneEvalEventCfg):
         func=task_mdp.randomize_camera_focal_length,
         mode="reset",
         params={
-            "camera_path_template": "/World/envs/env_{}/Robot/rgb_front_camera",
-            "focal_length_range": (22.4, 26.4),
+            "camera_path_template": RGB_FRONT_CAMERA_PATH_TEMPLATE,
+            "focal_length_range": RGB_FRONT_CAMERA_FOCAL_LENGTH_RANGE,
         },
     )
 
@@ -148,10 +169,10 @@ class BaseRGBEventCfg(FinetuneEvalEventCfg):
         func=task_mdp.randomize_tiled_cameras,
         mode="reset",
         params={
-            "camera_path_template": "/World/envs/env_{}/Robot/rgb_side_camera",
+            "camera_path_template": RGB_SIDE_CAMERA_PATH_TEMPLATE,
             # Base values from TiledCameraCfg
-            "base_position": (-0.5430160, -0.2917557, 0.4118886),
-            "base_rotation": (0.93103116, 0.35759344, -0.06975901, 0.02101393),
+            "base_position": RGB_SIDE_CAMERA_POSITION,
+            "base_rotation": RGB_SIDE_CAMERA_ROTATION,
             # Delta ranges for position (in meters)
             "position_deltas": {"x": (-0.05, 0.05), "y": (-0.05, 0.05), "z": (-0.05, 0.05)},
             # Delta ranges for euler angles (in degrees)
@@ -162,17 +183,20 @@ class BaseRGBEventCfg(FinetuneEvalEventCfg):
     randomize_side_camera_focal_length = EventTerm(
         func=task_mdp.randomize_camera_focal_length,
         mode="reset",
-        params={"camera_path_template": "/World/envs/env_{}/Robot/rgb_side_camera", "focal_length_range": (22.4, 26.4)},
+        params={
+            "camera_path_template": RGB_SIDE_CAMERA_PATH_TEMPLATE,
+            "focal_length_range": RGB_SIDE_CAMERA_FOCAL_LENGTH_RANGE,
+        },
     )
 
     randomize_wrist_camera = EventTerm(
         func=task_mdp.randomize_tiled_cameras,
         mode="reset",
         params={
-            "camera_path_template": "/World/envs/env_{}/Robot/ee_link/robotiq_base_link/rgb_wrist_camera",
+            "camera_path_template": RGB_WRIST_CAMERA_PATH_TEMPLATE,
             # Base values from TiledCameraCfg
-            "base_position": (0.0700000, -0.0390845, 0.0100000),
-            "base_rotation": (0.02827673, 0.70654118, 0.70678859, -0.02121002),
+            "base_position": RGB_WRIST_CAMERA_POSITION,
+            "base_rotation": RGB_WRIST_CAMERA_ROTATION,
             # Delta ranges for position (in meters)
             "position_deltas": {"x": (-0.01, 0.01), "y": (-0.01, 0.01), "z": (-0.01, 0.01)},
             # Delta ranges for euler angles (in degrees)
@@ -184,8 +208,8 @@ class BaseRGBEventCfg(FinetuneEvalEventCfg):
         func=task_mdp.randomize_camera_focal_length,
         mode="reset",
         params={
-            "camera_path_template": "/World/envs/env_{}/Robot/ee_link/robotiq_base_link/rgb_wrist_camera",
-            "focal_length_range": (19.02, 21.02),  # Range from wide-angle to telephoto
+            "camera_path_template": RGB_WRIST_CAMERA_PATH_TEMPLATE,
+            "focal_length_range": RGB_WRIST_CAMERA_FOCAL_LENGTH_RANGE,
         },
     )
 
