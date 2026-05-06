@@ -8,4 +8,4 @@ python scripts_v2/tools/collect_demos.py \
     env.scene.insertive_object=block \
     env.scene.receptive_object=box \
     env.events.reset_from_reset_states.params.dataset_dir=./Datasets/OmniResetRealWorkspace \
-    agent.algorithm.offline_algorithm_cfg.behavior_cloning_cfg.experts_path='["logs/rsl_rl/ur5e_robotiq_2f140_omnireset_agent/2026-05-03_14-44-39/exported/policy.pt"]'
+    agent.algorithm.offline_algorithm_cfg.behavior_cloning_cfg.experts_path='["logs/rsl_rl/ur5e_robotiq_2f140_omnireset_agent/0505_after_adr/exported/policy.pt"]'

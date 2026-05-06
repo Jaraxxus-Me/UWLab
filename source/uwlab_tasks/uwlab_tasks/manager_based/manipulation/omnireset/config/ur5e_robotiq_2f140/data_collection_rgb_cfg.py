@@ -50,14 +50,6 @@ RGB_WRIST_CAMERA_ROTATION = (0.02893693, 0.99953394, 0.00879001, -0.00415913)
 RGB_WRIST_CAMERA_FOCAL_LENGTH = 25.50
 RGB_WRIST_CAMERA_FOCAL_LENGTH_RANGE = (RGB_WRIST_CAMERA_FOCAL_LENGTH - 1.0, RGB_WRIST_CAMERA_FOCAL_LENGTH + 1.0)
 
-ROBOTIQ_2F140_INNER_FINGER_VISUAL_PRIMS = [
-    "ee_link/left_inner_finger/Finger4_01",
-    "ee_link/left_inner_finger/Fingertip_01",
-    "ee_link/right_inner_finger/Finger4_01",
-    "ee_link/right_inner_finger/Fingertip_01",
-]
-
-
 @configclass
 class DataCollectionRGBObjectSceneCfg(RlStateSceneCfg):
     # background
@@ -244,24 +236,7 @@ class RGBEventCfg(BaseRGBEventCfg):
         },
     )
 
-    randomize_inner_finger_appearance = EventTerm(
-        func=task_mdp.randomize_visual_appearance_multiple_meshes,
-        mode="interval",
-        interval_range_s=(4.0, 4.0),
-        params={
-            "asset_cfg": SceneEntityCfg("robot"),
-            "event_name": "randomize_inner_finger_event",
-            "mesh_names": ROBOTIQ_2F140_INNER_FINGER_VISUAL_PRIMS,
-            "texture_prob": 0.5,
-            "texture_config_path": str(Path(__file__).parent / "resources" / "texture_paths.yaml"),
-            "diffuse_tint_range": ((0.0, 0.0, 0.0), (1.0, 1.0, 1.0)),
-            "colors": {"r": (0.0, 1.0), "g": (0.0, 1.0), "b": (0.0, 1.0)},
-            "texture_scale_range": (0.7, 5.0),
-            "roughness_range": (0.2, 1.0),
-            "metallic_range": (0.0, 0.8),
-            "specular_range": (0.0, 1.0),
-        },
-    )
+    randomize_inner_finger_appearance = None
 
     randomize_insertive_object_appearance = EventTerm(
         func=task_mdp.randomize_visual_appearance_multiple_meshes,
@@ -704,20 +679,7 @@ class OODRGBEventCfg(BaseRGBEventCfg):
         },
     )
 
-    randomize_inner_finger_appearance = EventTerm(
-        func=task_mdp.randomize_visual_appearance_multiple_meshes,
-        mode="interval",
-        interval_range_s=(4.0, 4.0),
-        params={
-            "asset_cfg": SceneEntityCfg("robot"),
-            "event_name": "randomize_inner_finger_event",
-            "mesh_names": ROBOTIQ_2F140_INNER_FINGER_VISUAL_PRIMS,
-            "texture_prob": 0.5,
-            "texture_config_path": str(Path(__file__).parent / "resources" / "texture_paths_ood.yaml"),
-            "diffuse_tint_range": ((0.0, 0.0, 0.0), (1.0, 1.0, 1.0)),
-            "colors": {"r": (0.0, 1.0), "g": (0.0, 1.0), "b": (0.0, 1.0)},
-        },
-    )
+    randomize_inner_finger_appearance = None
 
     randomize_insertive_object_appearance = EventTerm(
         func=task_mdp.randomize_visual_appearance_multiple_meshes,
