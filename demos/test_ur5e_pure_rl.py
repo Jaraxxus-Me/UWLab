@@ -26,7 +26,7 @@ Usage (activate the project venv first):
 
     # Headless
     python demos/test_ur5e_pure_rl.py \
-        --checkpoint logs/rsl_rl/ur5e_robotiq_2f140_omnireset_agent/0503_expert/model_3400.pt \
+        --checkpoint logs/rsl_rl/ur5e_robotiq_2f140_omnireset_agent/0505_expert/model_1100.pt \
         --num_envs 4 --num_episodes 20 --max_steps 200 \
         env.scene.insertive_object=block \
         env.scene.receptive_object=box \
@@ -36,7 +36,7 @@ Usage (activate the project venv first):
     python scripts/reinforcement_learning/rsl_rl/play.py \
         --task OmniReset-Ur5eRobotiq2f140-RelCartesianOSC-State-Finetune-Play-v0 \
         --num_envs 4 \
-        --checkpoint logs/rsl_rl/ur5e_robotiq_2f140_omnireset_agent/0503_after_adr/model_4900.pt \
+        --checkpoint logs/rsl_rl/ur5e_robotiq_2f140_omnireset_agent/0505_after_adr/model_2900.pt \
         env.scene.insertive_object=block \
         env.scene.receptive_object=box \
         env.events.reset_from_reset_states.params.dataset_dir=./Datasets/OmniResetRealWorkspace

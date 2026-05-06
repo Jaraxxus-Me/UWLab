@@ -50,6 +50,13 @@ RGB_WRIST_CAMERA_ROTATION = (0.02893693, 0.99953394, 0.00879001, -0.00415913)
 RGB_WRIST_CAMERA_FOCAL_LENGTH = 25.50
 RGB_WRIST_CAMERA_FOCAL_LENGTH_RANGE = (RGB_WRIST_CAMERA_FOCAL_LENGTH - 1.0, RGB_WRIST_CAMERA_FOCAL_LENGTH + 1.0)
 
+ROBOTIQ_2F140_INNER_FINGER_VISUAL_PRIMS = [
+    "ee_link/left_inner_finger/Finger4_01",
+    "ee_link/left_inner_finger/Fingertip_01",
+    "ee_link/right_inner_finger/Finger4_01",
+    "ee_link/right_inner_finger/Fingertip_01",
+]
+
 
 @configclass
 class DataCollectionRGBObjectSceneCfg(RlStateSceneCfg):
@@ -244,7 +251,7 @@ class RGBEventCfg(BaseRGBEventCfg):
         params={
             "asset_cfg": SceneEntityCfg("robot"),
             "event_name": "randomize_inner_finger_event",
-            "mesh_names": ["left_inner_finger/visuals/mesh_1", "right_inner_finger/visuals/mesh_1"],
+            "mesh_names": ROBOTIQ_2F140_INNER_FINGER_VISUAL_PRIMS,
             "texture_prob": 0.5,
             "texture_config_path": str(Path(__file__).parent / "resources" / "texture_paths.yaml"),
             "diffuse_tint_range": ((0.0, 0.0, 0.0), (1.0, 1.0, 1.0)),
@@ -704,7 +711,7 @@ class OODRGBEventCfg(BaseRGBEventCfg):
         params={
             "asset_cfg": SceneEntityCfg("robot"),
             "event_name": "randomize_inner_finger_event",
-            "mesh_names": ["left_inner_finger/visuals/mesh_1", "right_inner_finger/visuals/mesh_1"],
+            "mesh_names": ROBOTIQ_2F140_INNER_FINGER_VISUAL_PRIMS,
             "texture_prob": 0.5,
             "texture_config_path": str(Path(__file__).parent / "resources" / "texture_paths_ood.yaml"),
             "diffuse_tint_range": ((0.0, 0.0, 0.0), (1.0, 1.0, 1.0)),
