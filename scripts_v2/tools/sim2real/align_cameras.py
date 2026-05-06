@@ -17,9 +17,9 @@ Mirrors the sysid workflow:
 Usage (front camera example):
     python scripts_v2/tools/sim2real/align_cameras.py \
         --enable_cameras \
-        --camera front_camera \
-        --real_image /path/to/real_front.png \
-        --joint_angles -12.0 -80.0 63.0 -30.6 -97.9 174.3
+        --camera wrist_camera \
+        --real_image /home/airlabbw/Research/skill_refactor/isaac_sim2real/third-party/diffusion_policy/scripts/sim2real/perception/calibrations/wrist_rgb.png \
+        --joint_angles 11.52201687 -89.25285672 -105.38453916 -76.38512525 89.57989806 -78.08544465
 
 Usage (wrist camera example):
     python scripts_v2/tools/sim2real/align_cameras.py \

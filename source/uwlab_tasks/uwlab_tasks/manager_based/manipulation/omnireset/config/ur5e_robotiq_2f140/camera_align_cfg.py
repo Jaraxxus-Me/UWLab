@@ -107,12 +107,12 @@ class CameraAlignSceneCfg(RlStateSceneCfg):
         height=480,
         width=640,
         offset=TiledCameraCfg.OffsetCfg(
-            pos=(-0.9101819, 0.0358507, 0.4750194),
-            rot=(0.67165214, 0.23014157, -0.25002852, -0.65833426),
+            pos=(-0.8706788, 0.0243685, 0.4224738),
+            rot=(0.66817688, 0.23835066, -0.22353137, -0.66840283),
             convention="opengl",
         ),
         data_types=["rgb"],
-        spawn=sim_utils.PinholeCameraCfg(focal_length=24.40),
+        spawn=sim_utils.PinholeCameraCfg(focal_length=25.40),
     )
 
     side_camera = TiledCameraCfg(
@@ -121,8 +121,8 @@ class CameraAlignSceneCfg(RlStateSceneCfg):
         height=480,
         width=640,
         offset=TiledCameraCfg.OffsetCfg(
-            pos=(-0.5430160, -0.2917557, 0.4118886),
-            rot=(0.93103116, 0.35759344, -0.06975901, 0.02101393),
+            pos=(-0.5983517, -0.3370562, 0.4304187),
+            rot=(0.92958434, 0.36533178, -0.03832522, -0.03060744),
             convention="opengl",
         ),
         data_types=["rgb"],
@@ -130,17 +130,17 @@ class CameraAlignSceneCfg(RlStateSceneCfg):
     )
 
     wrist_camera = TiledCameraCfg(
-        prim_path="{ENV_REGEX_NS}/Robot/ee_link/robotiq_base_link/rgb_wrist_camera",
+        prim_path="{ENV_REGEX_NS}/Robot/wrist_3_link/rgb_wrist_camera",
         update_period=0,
         height=480,
         width=640,
         offset=TiledCameraCfg.OffsetCfg(
-            pos=(-0.06192727, -0.08342348, -0.02054465),
-            rot=(0.02589054,  0.99876904,  0.00439874, -0.04208001),
+            pos=(-0.0230417, -0.0827855, -0.0249408),
+            rot=(0.02893693, 0.99953394, 0.00879001, -0.00415913),
             convention="opengl",
         ),
         data_types=["rgb"],
-        spawn=sim_utils.PinholeCameraCfg(focal_length=20.02, clipping_range=(0.03, 1e6)),
+        spawn=sim_utils.PinholeCameraCfg(focal_length=25.5, clipping_range=(0.07, 1e6)),
     )
 
 # Calibration:
