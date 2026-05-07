@@ -2,7 +2,7 @@ python scripts_v2/tools/collect_demos.py \
     --task OmniReset-Ur5eRobotiq2f140-RelCartesianOSC-RGB-DataCollection-v0 \
     --dataset_file Datasets/OmniResetRealWorkspace/rgb0.zarr \
     --num_envs 32 \
-    --num_demos 100000 \
+    --num_demos 50000 \
     --enable_cameras \
     --headless \
     env.scene.insertive_object=block \

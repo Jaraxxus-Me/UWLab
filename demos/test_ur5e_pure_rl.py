@@ -39,7 +39,7 @@ Usage (activate the project venv first):
         --checkpoint logs/rsl_rl/ur5e_robotiq_2f140_omnireset_agent/0505_after_adr/model_2900.pt \
         env.scene.insertive_object=block \
         env.scene.receptive_object=box \
-        env.events.reset_from_reset_states.params.dataset_dir=./Datasets/OmniResetRealWorkspace
+        env.events.reset_from_reset_states.params.dataset_dir=./Datasets/OmniReset_2f140
 """
 
 """Launch Isaac Sim Simulator first."""
