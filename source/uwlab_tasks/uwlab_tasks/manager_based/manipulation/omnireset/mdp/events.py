@@ -2521,6 +2521,266 @@ class randomize_visual_appearance_multiple_meshes(ManagerTermBase):
             )
 
 
+class randomize_shared_visual_appearance_multiple_assets(ManagerTermBase):
+    """Randomize multiple visual targets with one shared material sample per environment.
+
+    This is stricter than :class:`randomize_visual_appearance_multiple_meshes`: every configured
+    target must resolve to at least one prim in every environment group. It is intended for paired
+    visuals that should always match, such as a block shell and its receiving box.
+    """
+
+    def __init__(self, cfg: EventTermCfg, env: ManagerBasedEnv):
+        super().__init__(cfg, env)
+
+        from isaacsim.core.utils.extensions import enable_extension
+
+        enable_extension("omni.replicator.core")
+        import omni.replicator.core as rep
+
+        from pxr import Sdf, UsdShade
+
+        asset_cfgs: dict[str, SceneEntityCfg] = cfg.params.get("asset_cfgs")
+        mesh_names: dict[str, list[str]] = cfg.params.get("mesh_names", {})
+        texture_paths = cfg.params.get("texture_paths")
+        texture_config_path = cfg.params.get("texture_config_path")
+        event_name = cfg.params.get("event_name")
+
+        if not asset_cfgs:
+            raise RuntimeError(f"[{event_name}] asset_cfgs must contain at least one asset target.")
+
+        self.texture_prob = cfg.params.get("texture_prob", 1.0)
+        self.diffuse_tint_range = cfg.params.get("diffuse_tint_range")
+        self.colors = cfg.params.get("colors", {"r": (0.0, 1.0), "g": (0.0, 1.0), "b": (0.0, 1.0)})
+        self._texture_scale_range = cfg.params.get("texture_scale_range", (0.7, 5.0))
+        self._roughness_range = cfg.params.get("roughness_range", (0.0, 1.0))
+        self._metallic_range = cfg.params.get("metallic_range", (0.0, 1.0))
+        self._specular_range = cfg.params.get("specular_range", (0.0, 1.0))
+
+        if texture_config_path is not None:
+            texture_paths = utils.load_asset_paths_from_config(
+                texture_config_path, cache_subdir="textures", skip_validation=False
+            )
+            logging.info(f"[{event_name}] Loaded {len(texture_paths)} texture paths.")
+        if self.texture_prob > 0 and (texture_paths is None or len(texture_paths) == 0):
+            raise RuntimeError(
+                f"[{event_name}] texture_prob={self.texture_prob} but no texture paths loaded. "
+                f"Check texture_config_path={texture_config_path}"
+            )
+        if texture_paths:
+            non_local = [p for p in texture_paths if not p.startswith("/")]
+            if non_local:
+                raise RuntimeError(
+                    f"[{event_name}] {len(non_local)} texture paths are non-local (Nucleus) "
+                    "and will silently fail if Nucleus is unreachable. "
+                    f"First 3: {non_local[:3]}. Use only local/cloud-cached textures."
+                )
+            missing = [p for p in texture_paths if not os.path.exists(p)]
+            if missing:
+                raise RuntimeError(
+                    f"[{event_name}] {len(missing)}/{len(texture_paths)} texture files missing on disk. "
+                    f"First 3: {missing[:3]}"
+                )
+
+        if env.cfg.scene.replicate_physics:
+            raise RuntimeError(
+                "Unable to randomize shared visual appearance with scene replication enabled."
+                " Please set 'replicate_physics' to False in 'InteractiveSceneCfg'."
+            )
+
+        stage = sim_utils.SimulationContext.instance().stage
+        target_entries = []
+        for target_name, asset_cfg in asset_cfgs.items():
+            asset = env.scene[asset_cfg.name]
+            asset_prim_path = asset.cfg.prim_path
+            target_mesh_names = mesh_names.get(target_name, [])
+            root_token = asset_prim_path.rstrip("/").split("/")[-1]
+
+            if target_mesh_names:
+                patterns = []
+                for mesh_name in target_mesh_names:
+                    if not mesh_name.startswith("/"):
+                        mesh_name = "/" + mesh_name
+                    patterns.append(f"{asset_prim_path}{mesh_name}")
+            else:
+                patterns = [f"{asset_prim_path}/.*/visuals"]
+                if not sim_utils.find_matching_prim_paths(patterns[0]):
+                    patterns = [f"{asset_prim_path}/.*"]
+
+            matched_paths: list[str] = []
+            for pattern in patterns:
+                matched_paths.extend(sim_utils.find_matching_prim_paths(pattern))
+            matched_paths = sorted(set(matched_paths))
+            if not matched_paths:
+                raise RuntimeError(
+                    f"[{event_name}] No prims found for shared target '{target_name}' using patterns {patterns}."
+                )
+
+            for prim_path in matched_paths:
+                marker = f"/{root_token}/"
+                if marker not in prim_path:
+                    raise RuntimeError(
+                        f"[{event_name}] Could not derive env group for prim '{prim_path}' "
+                        f"with asset root token '{root_token}'."
+                    )
+                env_group = prim_path.split(marker, 1)[0]
+                target_entries.append((env_group, target_name, prim_path))
+
+        target_names = set(asset_cfgs.keys())
+        grouped_entries: dict[str, list[tuple[str, str]]] = {}
+        grouped_target_names: dict[str, set[str]] = {}
+        for env_group, target_name, prim_path in target_entries:
+            grouped_entries.setdefault(env_group, []).append((target_name, prim_path))
+            grouped_target_names.setdefault(env_group, set()).add(target_name)
+
+        missing_groups = {
+            group: sorted(target_names - names) for group, names in grouped_target_names.items() if names != target_names
+        }
+        if missing_groups:
+            raise RuntimeError(f"[{event_name}] Shared visual target mismatch by env group: {missing_groups}")
+
+        self.texture_paths = texture_paths
+        self.texture_rng = rep.rng.ReplicatorRNG(seed=hash(event_name) % (2**31))
+        self._texture_verified = False
+        self._shader_groups = []
+
+        required_inputs = {
+            "diffuse_texture": Sdf.ValueTypeNames.Asset,
+            "diffuse_tint": Sdf.ValueTypeNames.Color3f,
+            "diffuse_color_constant": Sdf.ValueTypeNames.Color3f,
+            "texture_scale": Sdf.ValueTypeNames.Float2,
+            "reflection_roughness_constant": Sdf.ValueTypeNames.Float,
+            "metallic_constant": Sdf.ValueTypeNames.Float,
+            "specular_level": Sdf.ValueTypeNames.Float,
+        }
+
+        for group, entries in sorted(grouped_entries.items()):
+            prims_group = []
+            for _, prim_path in sorted(entries, key=lambda item: item[1]):
+                prim = stage.GetPrimAtPath(prim_path)
+                if not prim.IsValid():
+                    raise RuntimeError(f"[{event_name}] Matched prim disappeared before binding: {prim_path}")
+                if prim.IsInstanceable():
+                    prim.SetInstanceable(False)
+                prims_group.append(prim)
+
+            material_prims = rep.functional.create_batch.material(
+                mdl="OmniPBR.mdl", bind_prims=prims_group, count=len(prims_group), project_uvw=True
+            )
+
+            shader_group = []
+            for prim, mat_prim in zip(prims_group, material_prims):
+                mat_path = str(mat_prim.GetPath()) if hasattr(mat_prim, "GetPath") else str(mat_prim)
+                shader_prim = stage.GetPrimAtPath(Sdf.Path(f"{mat_path}/Shader"))
+                if not shader_prim.IsValid():
+                    raise RuntimeError(f"[{event_name}] Shader not found at {mat_path}/Shader for group {group}.")
+
+                material = UsdShade.Material(mat_prim)
+                UsdShade.MaterialBindingAPI.Apply(prim)
+                UsdShade.MaterialBindingAPI(prim).Bind(material, UsdShade.Tokens.strongerThanDescendants)
+
+                shader = UsdShade.Shader(shader_prim)
+                props = shader_prim.GetPropertyNames()
+                for attr_name, attr_type in required_inputs.items():
+                    if f"inputs:{attr_name}" not in props:
+                        shader.CreateInput(attr_name, attr_type)
+                shader_group.append(shader_prim)
+            self._shader_groups.append(shader_group)
+
+        if isinstance(self.colors, dict):
+            self._color_low = np.array([self.colors[key][0] for key in ["r", "g", "b"]])
+            self._color_high = np.array([self.colors[key][1] for key in ["r", "g", "b"]])
+        else:
+            self._color_list = list(self.colors)
+            self._color_low = None
+            self._color_high = None
+
+        self(env, torch.arange(env.num_envs, device=env.device), **cfg.params)
+
+    def __call__(
+        self,
+        env: ManagerBasedEnv,
+        env_ids: torch.Tensor,
+        event_name: str,
+        asset_cfgs: dict[str, SceneEntityCfg],
+        mesh_names: dict[str, list[str]] | None = None,
+        texture_paths: list[str] | None = None,
+        texture_config_path: str | None = None,
+        texture_prob: float = 1.0,
+        colors: list[tuple[float, float, float]] | dict[str, tuple[float, float]] | None = None,
+        diffuse_tint_range: tuple[tuple[float, float, float], tuple[float, float, float]] | None = None,
+        texture_scale_range: tuple[float, float] | None = None,
+        roughness_range: tuple[float, float] | None = None,
+        metallic_range: tuple[float, float] | None = None,
+        specular_range: tuple[float, float] | None = None,
+    ):
+        if not self._shader_groups:
+            return
+
+        from pxr import Sdf
+
+        rng = self.texture_rng.generator
+        use_texture_mask = rng.random(size=len(self._shader_groups)) < self.texture_prob
+        rand_roughness = rng.uniform(self._roughness_range[0], self._roughness_range[1], size=len(self._shader_groups))
+        rand_metallic = rng.uniform(self._metallic_range[0], self._metallic_range[1], size=len(self._shader_groups))
+        rand_specular = rng.uniform(self._specular_range[0], self._specular_range[1], size=len(self._shader_groups))
+
+        random_textures = None
+        if self.texture_paths and use_texture_mask.any():
+            random_textures = rng.choice(self.texture_paths, size=len(self._shader_groups))
+            for tex_path in random_textures:
+                if tex_path.startswith("/") and not os.path.exists(tex_path):
+                    raise RuntimeError(
+                        f"[{event_name}] Texture file not found: {tex_path}. "
+                        "Local texture paths must exist on disk."
+                    )
+
+        random_colors = None
+        if not use_texture_mask.all():
+            if self._color_low is not None:
+                random_colors = rng.uniform(self._color_low, self._color_high, size=(len(self._shader_groups), 3))
+            else:
+                indices = rng.integers(0, len(self._color_list), size=len(self._shader_groups))
+                random_colors = np.array([self._color_list[i] for i in indices])
+
+        with Sdf.ChangeBlock():
+            for group_idx, shader_group in enumerate(self._shader_groups):
+                texture_scale = float(rng.uniform(self._texture_scale_range[0], self._texture_scale_range[1]))
+                diffuse_tint = None
+                if self.diffuse_tint_range is not None:
+                    diffuse_tint = rng.uniform(self.diffuse_tint_range[0], self.diffuse_tint_range[1], size=3)
+
+                for shader_prim in shader_group:
+                    shader_prim.GetAttribute("inputs:reflection_roughness_constant").Set(float(rand_roughness[group_idx]))
+                    shader_prim.GetAttribute("inputs:metallic_constant").Set(float(rand_metallic[group_idx]))
+                    shader_prim.GetAttribute("inputs:specular_level").Set(float(rand_specular[group_idx]))
+
+                    if use_texture_mask[group_idx] and random_textures is not None:
+                        shader_prim.GetAttribute("inputs:diffuse_texture").Set(Sdf.AssetPath(random_textures[group_idx]))
+                        shader_prim.GetAttribute("inputs:texture_scale").Set(Gf.Vec2f(texture_scale, texture_scale))
+                        if diffuse_tint is not None:
+                            shader_prim.GetAttribute("inputs:diffuse_tint").Set(
+                                Gf.Vec3f(float(diffuse_tint[0]), float(diffuse_tint[1]), float(diffuse_tint[2]))
+                            )
+                    else:
+                        shader_prim.GetAttribute("inputs:diffuse_texture").Set(Sdf.AssetPath(""))
+                        if random_colors is not None:
+                            color = random_colors[group_idx]
+                            shader_prim.GetAttribute("inputs:diffuse_color_constant").Set(
+                                Gf.Vec3f(float(color[0]), float(color[1]), float(color[2]))
+                            )
+
+        if not self._texture_verified and random_textures is not None and use_texture_mask.any():
+            first_tex_idx = int(np.argmax(use_texture_mask))
+            shader_prim = self._shader_groups[first_tex_idx][0]
+            current_val = shader_prim.GetAttribute("inputs:diffuse_texture").Get()
+            if current_val is None or str(current_val) == "":
+                raise RuntimeError(
+                    f"[{event_name}] Texture verification failed: diffuse_texture is empty after "
+                    f"USD Set. Expected: {random_textures[first_tex_idx]}."
+                )
+            self._texture_verified = True
+
+
 class implicit_to_explicit_swap(ManagerTermBase):
     """One-shot curriculum that swaps the arm actuator from ImplicitActuator to
     an explicit actuator (e.g. DelayedDCMotor) once the ADR sysid curriculum

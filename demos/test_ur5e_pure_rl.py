@@ -26,21 +26,20 @@ Usage (activate the project venv first):
 
     # Headless
     python demos/test_ur5e_pure_rl.py \
-        --checkpoint logs/rsl_rl/ur5e_robotiq_2f140_omnireset_agent/0505_expert/model_1100.pt \
+        --checkpoint logs/rsl_rl/ur5e_robotiq_2f140_omnireset_agent/0511_resume/model_3400.pt \
         --num_envs 4 --num_episodes 20 --max_steps 200 \
         env.scene.insertive_object=block \
         env.scene.receptive_object=box \
-        env.events.reset_from_reset_states.params.dataset_dir=./Datasets/OmniResetRealWorkspace
+        env.events.reset_from_reset_states.params.dataset_dir=./Datasets/OmniReset_2f140
 
     # Finetuned
     python scripts/reinforcement_learning/rsl_rl/play.py \
         --task OmniReset-Ur5eRobotiq2f140-RelCartesianOSC-State-Finetune-Play-v0 \
-        --num_envs 64 \
-        --checkpoint logs/rsl_rl/ur5e_robotiq_2f140_omnireset_agent/0505_after_adr/model_2900.pt \
+        --num_envs 4 \
+        --checkpoint logs/rsl_rl/ur5e_robotiq_2f140_omnireset_agent/0511_after_adr/model_4800.pt \
         env.scene.insertive_object=block \
         env.scene.receptive_object=box \
-        env.events.reset_from_reset_states.params.dataset_dir=./Datasets/OmniReset_2f140 \
-        --headless
+        env.events.reset_from_reset_states.params.dataset_dir=./Datasets/OmniReset_2f140
 """
 
 """Launch Isaac Sim Simulator first."""

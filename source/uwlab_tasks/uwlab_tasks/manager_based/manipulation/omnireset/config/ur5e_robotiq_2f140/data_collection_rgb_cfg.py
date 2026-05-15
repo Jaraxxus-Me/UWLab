@@ -245,7 +245,7 @@ class RGBEventCfg(BaseRGBEventCfg):
         params={
             "asset_cfg": SceneEntityCfg("insertive_object"),
             "event_name": "randomize_insertive_object_event",
-            "mesh_names": [],
+            "mesh_names": ["visuals/cube/Mesh"],
             "texture_prob": 0.5,
             "texture_config_path": str(Path(__file__).parent / "resources" / "texture_paths.yaml"),
             "diffuse_tint_range": ((0.0, 0.0, 0.0), (1.0, 1.0, 1.0)),
@@ -258,13 +258,19 @@ class RGBEventCfg(BaseRGBEventCfg):
     )
 
     randomize_receptive_object_appearance = EventTerm(
-        func=task_mdp.randomize_visual_appearance_multiple_meshes,
+        func=task_mdp.randomize_shared_visual_appearance_multiple_assets,
         mode="interval",
         interval_range_s=(4.0, 4.0),
         params={
-            "asset_cfg": SceneEntityCfg("receptive_object"),
-            "event_name": "randomize_receptive_object_event",
-            "mesh_names": [],
+            "asset_cfgs": {
+                "insertive_shell": SceneEntityCfg("insertive_object"),
+                "receptive_object": SceneEntityCfg("receptive_object"),
+            },
+            "event_name": "randomize_insertive_shell_receptive_object_event",
+            "mesh_names": {
+                "insertive_shell": ["visuals/outer/mesh_"],
+                "receptive_object": [],
+            },
             "texture_prob": 0.5,
             "texture_config_path": str(Path(__file__).parent / "resources" / "texture_paths.yaml"),
             "diffuse_tint_range": ((0.0, 0.0, 0.0), (1.0, 1.0, 1.0)),
@@ -688,7 +694,7 @@ class OODRGBEventCfg(BaseRGBEventCfg):
         params={
             "asset_cfg": SceneEntityCfg("insertive_object"),
             "event_name": "randomize_insertive_object_event",
-            "mesh_names": [],
+            "mesh_names": ["visuals/cube/Mesh"],
             "texture_prob": 0.5,
             "texture_config_path": str(Path(__file__).parent / "resources" / "texture_paths_ood.yaml"),
             "diffuse_tint_range": ((0.0, 0.0, 0.0), (1.0, 1.0, 1.0)),
@@ -697,13 +703,19 @@ class OODRGBEventCfg(BaseRGBEventCfg):
     )
 
     randomize_receptive_object_appearance = EventTerm(
-        func=task_mdp.randomize_visual_appearance_multiple_meshes,
+        func=task_mdp.randomize_shared_visual_appearance_multiple_assets,
         mode="interval",
         interval_range_s=(4.0, 4.0),
         params={
-            "asset_cfg": SceneEntityCfg("receptive_object"),
-            "event_name": "randomize_receptive_object_event",
-            "mesh_names": [],
+            "asset_cfgs": {
+                "insertive_shell": SceneEntityCfg("insertive_object"),
+                "receptive_object": SceneEntityCfg("receptive_object"),
+            },
+            "event_name": "randomize_insertive_shell_receptive_object_event",
+            "mesh_names": {
+                "insertive_shell": ["visuals/outer/mesh_"],
+                "receptive_object": [],
+            },
             "texture_prob": 0.5,
             "texture_config_path": str(Path(__file__).parent / "resources" / "texture_paths_ood.yaml"),
             "diffuse_tint_range": ((0.0, 0.0, 0.0), (1.0, 1.0, 1.0)),
