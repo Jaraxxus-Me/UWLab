@@ -22,7 +22,7 @@ from isaaclab.scene import InteractiveSceneCfg
 from isaaclab.utils import configclass
 from isaaclab.utils.assets import ISAAC_NUCLEUS_DIR
 
-from uwlab_assets import UWLAB_ASSETS_EXT_DIR, UWLAB_CLOUD_ASSETS_DIR, custom_cloud_path
+from uwlab_assets import UWLAB_CLOUD_ASSETS_DIR
 from uwlab_assets.robots.ur5e_robotiq_gripper import (
     EXPLICIT_UR5E_ROBOTIQ_2F140,
     IMPLICIT_UR5E_ROBOTIQ_2F140,
@@ -38,10 +38,7 @@ from ... import mdp as task_mdp
 # New reset states should be generated in the real workspace, where the table
 # and objects sit at -X in the robot base frame.
 OMNIRESET_2F140_DATASET_DIR = os.path.expanduser("./Datasets/OmniResetRealWorkspace")
-CORNERED_BLOCK_ASSET_DIR = custom_cloud_path(
-    "Props/Custom/CorneredBlock",
-    f"{UWLAB_ASSETS_EXT_DIR}/uwlab_assets/cornered_block",
-)
+CORNERED_BLOCK_ASSET_DIR = "https://huggingface.co/datasets/bowenli1024/physcoder_usd/resolve/main/objects/single_ur_scene"
 
 
 @configclass

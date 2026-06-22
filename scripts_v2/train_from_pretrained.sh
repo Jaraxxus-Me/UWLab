@@ -3,7 +3,7 @@ python scripts/reinforcement_learning/rsl_rl/train.py \
     --num_envs 8192 \
     --logger wandb \
     --headless \
-    --resume_path 2f140_cube_6900.pt \
+    --resume_path references/UWLab/0511_resume/model_3400.pt \
     env.scene.insertive_object=block \
     env.scene.receptive_object=box \
     env.events.reset_from_reset_states.params.dataset_dir=./Datasets/OmniResetRealWorkspace

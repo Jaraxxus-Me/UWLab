@@ -18,7 +18,7 @@ from isaaclab.scene import InteractiveSceneCfg
 from isaaclab.utils import configclass
 from isaaclab.utils.assets import ISAAC_NUCLEUS_DIR
 
-from uwlab_assets import UWLAB_ASSETS_EXT_DIR, UWLAB_CLOUD_ASSETS_DIR, custom_cloud_path
+from uwlab_assets import UWLAB_CLOUD_ASSETS_DIR
 from uwlab_assets.robots.ur5e_robotiq_gripper import IMPLICIT_UR5E_ROBOTIQ_2F140
 
 from uwlab_tasks.manager_based.manipulation.omnireset.config.ur5e_robotiq_2f140.actions import (
@@ -27,10 +27,7 @@ from uwlab_tasks.manager_based.manipulation.omnireset.config.ur5e_robotiq_2f140.
 
 from ... import mdp as task_mdp
 
-CORNERED_BLOCK_ASSET_DIR = custom_cloud_path(
-    "Props/Custom/CorneredBlock",
-    f"{UWLAB_ASSETS_EXT_DIR}/uwlab_assets/cornered_block",
-)
+CORNERED_BLOCK_ASSET_DIR = "https://huggingface.co/datasets/bowenli1024/physcoder_usd/resolve/main/objects/single_ur_scene"
 OMNIRESET_2F140_DATASET_DIR = "./Datasets/OmniResetRealWorkspace"
 
 
@@ -204,9 +201,9 @@ class ObjectAnywhereEEAnywhereEventCfg(ResetStatesBaseEventCfg):
                 # x, y are overridden by xy_annulus_range below.
                 "x": (0.0, 0.0),
                 "y": (0.0, 0.0),
-                "z": (0.0, 0.3),
-                "roll": (-np.pi, np.pi),
-                "pitch": (-np.pi, np.pi),
+                "z": (0.0, 0.01),
+                "roll": (0.0, 0.0),
+                "pitch": (0.0, 0.0),
                 "yaw": (-np.pi, np.pi),
             },
             "velocity_range": {},
@@ -222,15 +219,15 @@ class ObjectAnywhereEEAnywhereEventCfg(ResetStatesBaseEventCfg):
         func=task_mdp.reset_end_effector_round_fixed_asset,
         mode="reset",
         params={
-            "fixed_asset_cfg": SceneEntityCfg("receptive_object"),
+            "fixed_asset_cfg": SceneEntityCfg("insertive_object"),
             "fixed_asset_offset": None,
             "pose_range_b": {
-                "x": (-0.16, 0.16),
-                "y": (-0.16, 0.16),
-                "z": (0.0, 0.5),
-                "roll": (0.0, 0.0),
-                "pitch": (np.pi / 4, 3 * np.pi / 4),
-                "yaw": (-np.pi / 2, np.pi / 2),
+                "x": (-0.03, 0.03),
+                "y": (-0.03, 0.03),
+                "z": (0.22, 0.3),
+                "roll": (-np.pi / 16, np.pi / 16),
+                "pitch": (15 * np.pi / 16, 17 * np.pi / 16),
+                "yaw": (-np.pi, np.pi),
             },
             "robot_ik_cfg": SceneEntityCfg(
                 "robot", joint_names=["shoulder.*", "elbow.*", "wrist.*"], body_names="robotiq_base_link"

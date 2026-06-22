@@ -3,6 +3,6 @@ python scripts/reinforcement_learning/rsl_rl/train.py \
     --num_envs 8192 \
     --logger wandb \
     --headless \
-    env.scene.insertive_object=cube \
-    env.scene.receptive_object=cube \
+    env.scene.insertive_object=block \
+    env.scene.receptive_object=box \
     env.events.reset_from_reset_states.params.dataset_dir=./Datasets/OmniResetRealWorkspace
