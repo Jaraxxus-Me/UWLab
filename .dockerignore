@@ -24,6 +24,7 @@ recordings/
 **/*.egg-info/
 # ignore local virtual environments
 env_uwlab/
+.venv/
 # Note: _isaaclab/ is NOT ignored so it gets synced to cluster
 # ignore isaac sim symlink
 _isaac_sim?

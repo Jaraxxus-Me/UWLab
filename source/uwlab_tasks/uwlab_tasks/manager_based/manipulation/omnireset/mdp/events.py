@@ -33,7 +33,15 @@ from uwlab.envs.mdp.actions.actions_cfg import DifferentialInverseKinematicsActi
 from uwlab_tasks.manager_based.manipulation.omnireset.mdp import utils
 
 from ..assembly_keypoints import Offset
+from .collision_analyzer_cfg import CollisionAnalyzerCfg
 from .success_monitor_cfg import SuccessMonitorCfg
+
+
+def scene_matches_reset_profiles(env: ManagerBasedEnv, profiles: dict[str, str] | None) -> bool:
+    """Return whether all named scene assets carry the requested reset profiles."""
+    if not profiles:
+        return False
+    return all(getattr(env.scene[name].cfg, "reset_profile", None) == profile for name, profile in profiles.items())
 
 
 class _GraspSamplingEvent(ManagerTermBase):
@@ -694,6 +702,371 @@ class reset_end_effector_round_fixed_asset(ManagerTermBase):
             )
 
 
+class reset_end_effector_round_fixed_asset_or_physcoder_submdp(reset_end_effector_round_fixed_asset):
+    """Use the canonical PhysCoder corner-block reset for its explicitly tagged asset pair."""
+
+    _BOX_POSE_RANGE = {
+        "x": (-0.6, -0.5),
+        "y": (-0.1, 0.1),
+        "z": (0.0, 0.0),
+        "roll": (0.0, 0.0),
+        "pitch": (0.0, 0.0),
+        "yaw": (11.0 * np.pi / 12.0, 13.0 * np.pi / 12.0),
+    }
+    _CORNER_SIGNS = ((1.0, 1.0), (1.0, -1.0), (-1.0, 1.0), (-1.0, -1.0))
+    _CLOSED_GRIPPER_POSITIONS = {
+        "finger_joint": 0.785398,
+        "right_outer_knuckle_joint": 0.785398,
+        "left_inner_knuckle_joint": 0.785398,
+        "right_inner_knuckle_joint": -0.785398,
+        "left_inner_finger_pad_joint": 0.785398,
+        "right_inner_finger_pad_joint": 0.785398,
+    }
+    _STANDOFF_GRID = tuple(round(0.15 + index * 0.01, 2) for index in range(21))
+
+    def __init__(self, cfg: EventTermCfg, env: ManagerBasedEnv):
+        super().__init__(cfg, env)
+        profile = cfg.params.get("physcoder_profile")
+        box_cfg: SceneEntityCfg = cfg.params.get("physcoder_box_cfg")
+        block_cfg: SceneEntityCfg = cfg.params.get("physcoder_block_cfg")
+        support_cfg: SceneEntityCfg = cfg.params.get("physcoder_support_cfg")
+        self._physcoder_active = bool(
+            profile
+            and box_cfg is not None
+            and block_cfg is not None
+            and getattr(env.scene[box_cfg.name].cfg, "reset_profile", None) == profile
+            and getattr(env.scene[block_cfg.name].cfg, "reset_profile", None) == profile
+        )
+        if not self._physcoder_active:
+            return
+
+        self._physcoder_box: RigidObject = env.scene[box_cfg.name]
+        self._physcoder_block: RigidObject = env.scene[block_cfg.name]
+        self._physcoder_support: RigidObject = env.scene[support_cfg.name]
+        box_metadata = utils.read_metadata_from_usd_directory(self._physcoder_box.cfg.spawn.usd_path)
+        self._physcoder_box_bottom_offset = torch.tensor(
+            box_metadata["bottom_offset"]["pos"], dtype=torch.float32, device=env.device
+        )
+        self._physcoder_box_ranges = torch.tensor(
+            [self._BOX_POSE_RANGE[key] for key in ("x", "y", "z", "roll", "pitch", "yaw")],
+            dtype=torch.float32,
+            device=env.device,
+        )
+        self._physcoder_corner_signs = torch.tensor(
+            self._CORNER_SIGNS, dtype=torch.float32, device=env.device
+        )
+
+        self._physcoder_arm_joint_ids = self.robot.find_joints(["shoulder.*", "elbow.*", "wrist.*"])[0]
+        body_ids, _ = self.robot.find_bodies("wrist_3_link")
+        if len(body_ids) != 1:
+            raise RuntimeError(f"Expected one wrist_3_link body, got {body_ids}.")
+        self._physcoder_body_id = body_ids[0]
+        ik_cfg = DifferentialInverseKinematicsActionCfg(
+            asset_name="robot",
+            joint_names=["shoulder.*", "elbow.*", "wrist.*"],
+            body_name="wrist_3_link",
+            controller=DifferentialIKControllerCfg(command_type="pose", use_relative_mode=False, ik_method="dls"),
+            scale=1.0,
+        )
+        self._physcoder_solver: DifferentialInverseKinematicsAction = ik_cfg.class_type(ik_cfg, env)  # type: ignore
+
+        closed_ids = []
+        closed_positions = []
+        for joint_name, joint_position in self._CLOSED_GRIPPER_POSITIONS.items():
+            joint_ids, joint_names = self.robot.find_joints(joint_name)
+            if len(joint_ids) != 1:
+                raise RuntimeError(f"Expected one gripper joint {joint_name!r}, got {joint_names}.")
+            closed_ids.append(joint_ids[0])
+            closed_positions.append(joint_position)
+        self._physcoder_closed_joint_ids = closed_ids
+        self._physcoder_closed_positions = torch.tensor(
+            closed_positions, dtype=torch.float32, device=env.device
+        )
+        collision_cfg = CollisionAnalyzerCfg(
+            num_points=64,
+            max_dist=0.5,
+            min_dist=0.001,
+            asset_cfg=SceneEntityCfg("robot"),
+            obstacle_cfgs=[SceneEntityCfg(box_cfg.name), SceneEntityCfg(block_cfg.name)],
+        )
+        self._physcoder_collision_analyzer = collision_cfg.class_type(collision_cfg, env)
+
+    def __call__(
+        self,
+        env: ManagerBasedEnv,
+        env_ids: torch.Tensor,
+        fixed_asset_cfg: SceneEntityCfg,
+        fixed_asset_offset: Offset,
+        pose_range_b: dict[str, tuple[float, float]],
+        robot_ik_cfg: SceneEntityCfg,
+        physcoder_profile: str | None = None,
+        physcoder_box_cfg: SceneEntityCfg | None = None,
+        physcoder_block_cfg: SceneEntityCfg | None = None,
+        physcoder_support_cfg: SceneEntityCfg | None = None,
+    ) -> None:
+        del physcoder_profile, physcoder_box_cfg, physcoder_block_cfg, physcoder_support_cfg
+        if not self._physcoder_active:
+            return super().__call__(
+                env, env_ids, fixed_asset_cfg, fixed_asset_offset, pose_range_b, robot_ik_cfg
+            )
+
+        pending_ids = env_ids.clone()
+        for _ in range(16):
+            if pending_ids.numel() == 0:
+                break
+            self._physcoder_reset_robot(env, pending_ids)
+            self._physcoder_reset_box_block(env, pending_ids)
+            minimum = self._physcoder_minimum_standoff(env, pending_ids)
+            has_minimum = torch.isfinite(minimum)
+            candidate_ids = pending_ids[has_minimum]
+            candidate_minimum = minimum[has_minimum]
+            if candidate_ids.numel() == 0:
+                continue
+            standoff = candidate_minimum + 0.02
+            target_pos, target_quat = self._physcoder_sample_sphere(candidate_ids, standoff)
+            self._physcoder_place(env, candidate_ids, target_pos, target_quat)
+            accepted = self._physcoder_valid(env, candidate_ids, target_pos, require_box_bounds=True)
+            pending_ids = torch.cat((pending_ids[~has_minimum], candidate_ids[~accepted]))
+
+        if pending_ids.numel() != 0:
+            raise RuntimeError(
+                "Failed to solve the PhysCoder-compatible collision-free reset for "
+                f"environment IDs {pending_ids.tolist()}."
+            )
+
+    def _physcoder_reset_robot(self, env: ManagerBasedEnv, env_ids: torch.Tensor) -> None:
+        position = self.robot.data.default_joint_pos[env_ids].clone()
+        velocity = torch.zeros_like(position)
+        self.robot.write_joint_state_to_sim(position, velocity, env_ids=env_ids)
+        self.robot.set_joint_position_target(position, env_ids=env_ids)
+        self.robot.set_joint_velocity_target(velocity, env_ids=env_ids)
+        env.sim.forward()
+        env.scene.update(0.0)
+
+    def _physcoder_reset_box_block(self, env: ManagerBasedEnv, env_ids: torch.Tensor) -> None:
+        count = len(env_ids)
+        samples = math_utils.sample_uniform(
+            self._physcoder_box_ranges[:, 0], self._physcoder_box_ranges[:, 1], (count, 6), device=env.device
+        )
+        box_pos = self._physcoder_support.data.root_pos_w[env_ids] + samples[:, :3]
+        box_pos -= self._physcoder_box_bottom_offset
+        box_quat = math_utils.quat_mul(
+            self._physcoder_box.data.default_root_state[env_ids, 3:7],
+            math_utils.quat_from_euler_xyz(samples[:, 3], samples[:, 4], samples[:, 5]),
+        )
+        self._physcoder_box.write_root_pose_to_sim(torch.cat((box_pos, box_quat), dim=-1), env_ids=env_ids)
+        self._physcoder_box.write_root_velocity_to_sim(
+            torch.zeros((count, 6), device=env.device), env_ids=env_ids
+        )
+        env.sim.forward()
+        env.scene.update(0.0)
+
+        corner_indices = torch.randint(0, len(self._CORNER_SIGNS), (count,), device=env.device)
+        local_pos = torch.zeros((count, 3), device=env.device)
+        local_pos[:, :2] = 0.09 * self._physcoder_corner_signs[corner_indices]
+        local_pos[:, 2] = 0.04
+        block_pos, block_quat = math_utils.combine_frame_transforms(box_pos, box_quat, local_pos, None)
+        self._physcoder_block.write_root_pose_to_sim(
+            torch.cat((block_pos, block_quat), dim=-1), env_ids=env_ids
+        )
+        self._physcoder_block.write_root_velocity_to_sim(
+            torch.zeros((count, 6), device=env.device), env_ids=env_ids
+        )
+        for _ in range(20):
+            env.scene.write_data_to_sim()
+            env.sim.step(render=False)
+            env.scene.update(float(env.physics_dt))
+
+    def _physcoder_solve_ik(
+        self, env: ManagerBasedEnv, env_ids: torch.Tensor, target_pos: torch.Tensor, target_quat: torch.Tensor
+    ) -> None:
+        current_pos = self.robot.data.body_pos_w[:, self._physcoder_body_id].clone()
+        current_quat = self.robot.data.body_quat_w[:, self._physcoder_body_id].clone()
+        current_pos[env_ids] = target_pos
+        current_quat[env_ids] = target_quat
+        pos_b, quat_b = math_utils.subtract_frame_transforms(
+            self.robot.data.root_link_pos_w, self.robot.data.root_link_quat_w, current_pos, current_quat
+        )
+        self._physcoder_solver.process_actions(torch.cat((pos_b, quat_b), dim=-1))
+        zero_velocity = torch.zeros((len(env_ids), len(self._physcoder_arm_joint_ids)), device=env.device)
+        for _ in range(30):
+            self._physcoder_solver.apply_actions()
+            delta = 0.25 * (self.robot.data.joint_pos_target[env_ids] - self.robot.data.joint_pos[env_ids])
+            self.robot.write_joint_state_to_sim(
+                position=(self.robot.data.joint_pos[env_ids] + delta)[:, self._physcoder_arm_joint_ids],
+                velocity=zero_velocity,
+                joint_ids=self._physcoder_arm_joint_ids,
+                env_ids=env_ids,
+            )
+            env.sim.forward()
+            env.scene.update(0.0)
+
+    def _physcoder_close_gripper(self, env: ManagerBasedEnv, env_ids: torch.Tensor) -> None:
+        position = self.robot.data.joint_pos[env_ids].clone()
+        position[:, self._physcoder_closed_joint_ids] = self._physcoder_closed_positions
+        velocity = torch.zeros_like(position)
+        self.robot.write_joint_state_to_sim(position, velocity, env_ids=env_ids)
+        self.robot.set_joint_position_target(position, env_ids=env_ids)
+        self.robot.set_joint_velocity_target(velocity, env_ids=env_ids)
+        env.sim.forward()
+        env.scene.update(0.0)
+
+    @staticmethod
+    def _physcoder_pointing_quaternion(ee_pos: torch.Tensor, block_pos: torch.Tensor) -> torch.Tensor:
+        z_axis = torch.nn.functional.normalize(block_pos - ee_pos, dim=-1)
+        reference_y = torch.zeros_like(z_axis)
+        reference_y[:, 1] = 1.0
+        x_axis = torch.nn.functional.normalize(torch.linalg.cross(reference_y, z_axis, dim=-1), dim=-1)
+        y_axis = torch.linalg.cross(z_axis, x_axis, dim=-1)
+        return math_utils.quat_from_matrix(torch.stack((x_axis, y_axis, z_axis), dim=-1))
+
+    def _physcoder_place(
+        self, env: ManagerBasedEnv, env_ids: torch.Tensor, target_pos: torch.Tensor, target_quat: torch.Tensor
+    ) -> None:
+        self._physcoder_solve_ik(env, env_ids, target_pos, target_quat)
+        self._physcoder_close_gripper(env, env_ids)
+
+    def _physcoder_minimum_standoff(self, env: ManagerBasedEnv, env_ids: torch.Tensor) -> torch.Tensor:
+        minimum = torch.full((len(env_ids),), torch.nan, dtype=torch.float32, device=env.device)
+        for distance in self._STANDOFF_GRID:
+            rows = torch.nonzero(torch.isnan(minimum), as_tuple=False).squeeze(-1)
+            if rows.numel() == 0:
+                break
+            active_ids = env_ids[rows]
+            target_pos = self._physcoder_block.data.root_pos_w[active_ids].clone()
+            target_pos[:, 2] += distance
+            target_quat = self._physcoder_pointing_quaternion(
+                target_pos, self._physcoder_block.data.root_pos_w[active_ids]
+            )
+            self._physcoder_place(env, active_ids, target_pos, target_quat)
+            valid = self._physcoder_valid(env, active_ids, target_pos, require_box_bounds=False)
+            minimum[rows[valid]] = distance
+        return minimum
+
+    def _physcoder_sample_sphere(
+        self, env_ids: torch.Tensor, standoff: torch.Tensor
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        block_pos = self._physcoder_block.data.root_pos_w[env_ids]
+        box_pos = self._physcoder_box.data.root_pos_w[env_ids]
+        sampling_half_extent = torch.clamp(torch.abs(block_pos[:, :2] - box_pos[:, :2]) - 0.01, min=0.0)
+        target_xy = box_pos[:, :2] - sampling_half_extent
+        target_xy += torch.rand((len(env_ids), 2), device=block_pos.device) * (2.0 * sampling_half_extent)
+        delta_xy = target_xy - block_pos[:, :2]
+        planar_distance = torch.linalg.vector_norm(delta_xy, dim=-1)
+        scale = torch.clamp(0.95 * standoff / torch.clamp(planar_distance, min=1.0e-8), max=1.0)
+        delta_xy *= scale.unsqueeze(-1)
+        target_pos = block_pos.clone()
+        target_pos[:, :2] += delta_xy
+        target_pos[:, 2] += torch.sqrt(torch.clamp(standoff.square() - delta_xy.square().sum(dim=-1), min=0.0))
+        return target_pos, self._physcoder_pointing_quaternion(target_pos, block_pos)
+
+    def _physcoder_valid(
+        self, env: ManagerBasedEnv, env_ids: torch.Tensor, target_pos: torch.Tensor, require_box_bounds: bool
+    ) -> torch.Tensor:
+        actual_pos = self.robot.data.body_pos_w[env_ids, self._physcoder_body_id]
+        actual_quat = self.robot.data.body_quat_w[env_ids, self._physcoder_body_id]
+        local_approach = torch.zeros((len(env_ids), 3), device=env.device)
+        local_approach[:, 2] = 1.0
+        approach = math_utils.quat_apply(actual_quat, local_approach)
+        block_pos = self._physcoder_block.data.root_pos_w[env_ids]
+        box_pos = self._physcoder_box.data.root_pos_w[env_ids]
+        pointing = torch.sum(
+            approach * torch.nn.functional.normalize(block_pos - actual_pos, dim=-1), dim=-1
+        ) >= 0.995
+        valid = torch.linalg.vector_norm(actual_pos - target_pos, dim=-1) <= 0.012
+        if require_box_bounds:
+            valid &= torch.all(
+                torch.abs(actual_pos[:, :2] - box_pos[:, :2])
+                <= torch.abs(block_pos[:, :2] - box_pos[:, :2]) + 1.0e-6,
+                dim=-1,
+            )
+            valid &= actual_pos[:, 2] > block_pos[:, 2]
+        return valid & pointing & self._physcoder_collision_analyzer(env, env_ids)
+
+
+def _write_in_box_object_pose(
+    env: ManagerBasedEnv,
+    env_ids: torch.Tensor,
+    object_asset: RigidObject,
+    box_asset: RigidObject,
+    xy_half_extent: float,
+    relative_z_range: tuple[float, float],
+    maximum_tilt: float,
+) -> None:
+    """Sample an object center inside the box and its local z-axis inside a world-z cone."""
+    count = len(env_ids)
+    local_position = torch.empty((count, 3), dtype=torch.float32, device=env.device)
+    local_position[:, :2] = math_utils.sample_uniform(
+        -xy_half_extent, xy_half_extent, (count, 2), device=env.device
+    )
+    local_position[:, 2] = math_utils.sample_uniform(
+        relative_z_range[0], relative_z_range[1], (count,), device=env.device
+    )
+    position, _ = math_utils.combine_frame_transforms(
+        box_asset.data.root_pos_w[env_ids], box_asset.data.root_quat_w[env_ids], local_position, None
+    )
+
+    # Rz(azimuth) Ry(tilt) Rz(spin) gives an exact tilt angle while retaining
+    # uniform azimuth and free rotation about the block's own z-axis.
+    azimuth = math_utils.sample_uniform(0.0, 2.0 * float(np.pi), (count,), device=env.device)
+    tilt = math_utils.sample_uniform(0.0, maximum_tilt, (count,), device=env.device)
+    spin = math_utils.sample_uniform(-float(np.pi), float(np.pi), (count,), device=env.device)
+    zeros = torch.zeros(count, dtype=torch.float32, device=env.device)
+    orientation = math_utils.quat_mul(
+        math_utils.quat_mul(
+            math_utils.quat_from_euler_xyz(zeros, zeros, azimuth),
+            math_utils.quat_from_euler_xyz(zeros, tilt, zeros),
+        ),
+        math_utils.quat_from_euler_xyz(zeros, zeros, spin),
+    )
+
+    object_asset.write_root_pose_to_sim(torch.cat((position, orientation), dim=-1), env_ids=env_ids)
+    object_asset.write_root_velocity_to_sim(
+        torch.zeros((count, 6), dtype=torch.float32, device=env.device), env_ids=env_ids
+    )
+    env.sim.forward()
+    env.scene.update(0.0)
+
+
+class reset_object_pose_in_box(ManagerTermBase):
+    """Profile-gated in-box block reset shared by the two grasp-dataset tasks."""
+
+    def __init__(self, cfg: EventTermCfg, env: ManagerBasedEnv):
+        super().__init__(cfg, env)
+        object_cfg: SceneEntityCfg = cfg.params.get("object_cfg")
+        box_cfg: SceneEntityCfg = cfg.params.get("box_cfg")
+        self._active = scene_matches_reset_profiles(env, cfg.params.get("profiles"))
+        if self._active:
+            self.object_asset: RigidObject = env.scene[object_cfg.name]
+            self.box_asset: RigidObject = env.scene[box_cfg.name]
+        self.xy_half_extent = float(cfg.params.get("xy_half_extent", 0.09))
+        self.relative_z_range = tuple(cfg.params.get("relative_z_range", (0.025, 0.08)))
+        self.maximum_tilt = float(cfg.params.get("maximum_tilt", np.pi / 6.0))
+
+    def __call__(
+        self,
+        env: ManagerBasedEnv,
+        env_ids: torch.Tensor,
+        object_cfg: SceneEntityCfg,
+        box_cfg: SceneEntityCfg,
+        profiles: dict[str, str] | None = None,
+        xy_half_extent: float = 0.09,
+        relative_z_range: tuple[float, float] = (0.025, 0.08),
+        maximum_tilt: float = np.pi / 6.0,
+    ) -> None:
+        del object_cfg, box_cfg, profiles, xy_half_extent, relative_z_range, maximum_tilt
+        if self._active:
+            _write_in_box_object_pose(
+                env,
+                env_ids,
+                self.object_asset,
+                self.box_asset,
+                self.xy_half_extent,
+                self.relative_z_range,
+                self.maximum_tilt,
+            )
+
+
 class reset_end_effector_from_grasp_dataset(ManagerTermBase):
     """Reset end effector pose using saved grasp dataset from grasp sampling."""
 
@@ -714,6 +1087,33 @@ class reset_end_effector_from_grasp_dataset(ManagerTermBase):
         pose_range_b: dict[str, tuple[float, float]] = cfg.params.get("pose_range_b", dict())
         range_list = [pose_range_b.get(key, (0.0, 0.0)) for key in ["x", "y", "z", "roll", "pitch", "yaw"]]
         self.ranges = torch.tensor(range_list, device=env.device)
+        self.workspace_box_cfg: SceneEntityCfg | None = cfg.params.get("workspace_box_cfg")
+        self.workspace_filter_active = bool(
+            self.workspace_box_cfg is not None
+            and scene_matches_reset_profiles(env, cfg.params.get("workspace_profiles"))
+        )
+        self.workspace_box = env.scene[self.workspace_box_cfg.name] if self.workspace_filter_active else None
+        self.workspace_xy_half_extent = float(cfg.params.get("workspace_xy_half_extent", 0.09))
+        self.workspace_relative_z_range = tuple(cfg.params.get("workspace_relative_z_range", (0.17, 0.37)))
+        self.workspace_standoff_range = tuple(cfg.params.get("workspace_standoff_range", (0.17, 0.37)))
+        self.workspace_max_sampling_attempts = int(cfg.params.get("workspace_max_sampling_attempts", 2048))
+        self.workspace_resample_object = bool(cfg.params.get("workspace_resample_object", False))
+        self.workspace_object_xy_half_extent = float(cfg.params.get("workspace_object_xy_half_extent", 0.09))
+        self.workspace_object_z_range = tuple(cfg.params.get("workspace_object_z_range", (0.025, 0.08)))
+        self.workspace_object_maximum_tilt = float(
+            cfg.params.get("workspace_object_maximum_tilt", np.pi / 6.0)
+        )
+        self.workspace_object_resample_interval = int(cfg.params.get("workspace_object_resample_interval", 256))
+        self.workspace_collision_attempts = int(cfg.params.get("workspace_collision_attempts", 32))
+        if self.workspace_filter_active:
+            collision_cfg = CollisionAnalyzerCfg(
+                num_points=128,
+                max_dist=0.5,
+                min_dist=0.001,
+                asset_cfg=SceneEntityCfg("robot"),
+                obstacle_cfgs=[SceneEntityCfg(self.workspace_box_cfg.name)],
+            )
+            self.workspace_collision_analyzer = collision_cfg.class_type(collision_cfg, env)
 
         robot_ik_solver_cfg = DifferentialInverseKinematicsActionCfg(
             asset_name=robot_ik_cfg.name,
@@ -798,6 +1198,130 @@ class reset_end_effector_from_grasp_dataset(ManagerTermBase):
 
         print(f"Loaded and pre-computed {num_grasps} grasp tensors from Torch file: {self.grasp_dataset_path}")
 
+    def _resample_workspace_object(self, env: ManagerBasedEnv, env_ids: torch.Tensor) -> None:
+        """Redraw the shared low, upright, in-box block distribution."""
+        _write_in_box_object_pose(
+            env,
+            env_ids,
+            self.fixed_asset,
+            self.workspace_box,
+            self.workspace_object_xy_half_extent,
+            self.workspace_object_z_range,
+            self.workspace_object_maximum_tilt,
+        )
+
+    def _sample_grasp_targets(
+        self, env: ManagerBasedEnv, env_ids: torch.Tensor
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        """Rejection-sample grasp poses satisfying the configured EE workspace."""
+        object_pos_w = self.fixed_asset.data.root_pos_w[env_ids].clone()
+        object_quat_w = self.fixed_asset.data.root_quat_w[env_ids].clone()
+        count = len(env_ids)
+        grasp_indices = torch.empty(count, dtype=torch.long, device=env.device)
+        gripper_pos_w = torch.empty((count, 3), dtype=torch.float32, device=env.device)
+        gripper_quat_w = torch.empty((count, 4), dtype=torch.float32, device=env.device)
+
+        pending = torch.arange(count, device=env.device)
+        for attempt in range(self.workspace_max_sampling_attempts if self.workspace_filter_active else 1):
+            if pending.numel() == 0:
+                break
+            candidate_indices = torch.randint(0, len(self.rel_positions), (len(pending),), device=env.device)
+            candidate_pos, candidate_quat = math_utils.combine_frame_transforms(
+                object_pos_w[pending],
+                object_quat_w[pending],
+                self.rel_positions[candidate_indices],
+                self.rel_quaternions[candidate_indices],
+            )
+            if torch.any(self.ranges != 0.0):
+                samples = math_utils.sample_uniform(
+                    self.ranges[:, 0], self.ranges[:, 1], (len(pending), 6), device=env.device
+                )
+                candidate_pos, candidate_quat = math_utils.combine_frame_transforms(
+                    candidate_pos,
+                    candidate_quat,
+                    samples[:, :3],
+                    math_utils.quat_from_euler_xyz(samples[:, 3], samples[:, 4], samples[:, 5]),
+                )
+
+            if self.workspace_filter_active:
+                box_pos = self.workspace_box.data.root_pos_w[env_ids[pending]]
+                relative_z = candidate_pos[:, 2] - object_pos_w[pending, 2]
+                standoff = torch.linalg.vector_norm(candidate_pos - object_pos_w[pending], dim=-1)
+                accepted = (
+                    (torch.abs(candidate_pos[:, 0] - box_pos[:, 0]) <= self.workspace_xy_half_extent)
+                    & (torch.abs(candidate_pos[:, 1] - box_pos[:, 1]) <= self.workspace_xy_half_extent)
+                    & (relative_z >= self.workspace_relative_z_range[0])
+                    & (relative_z <= self.workspace_relative_z_range[1])
+                    & (standoff >= self.workspace_standoff_range[0])
+                    & (standoff <= self.workspace_standoff_range[1])
+                )
+            else:
+                accepted = torch.ones(len(pending), dtype=torch.bool, device=env.device)
+
+            accepted_rows = pending[accepted]
+            grasp_indices[accepted_rows] = candidate_indices[accepted]
+            gripper_pos_w[accepted_rows] = candidate_pos[accepted]
+            gripper_quat_w[accepted_rows] = candidate_quat[accepted]
+            pending = pending[~accepted]
+
+            if (
+                pending.numel() != 0
+                and self.workspace_resample_object
+                and (attempt + 1) % self.workspace_object_resample_interval == 0
+            ):
+                pending_env_ids = env_ids[pending]
+                self._resample_workspace_object(env, pending_env_ids)
+                object_pos_w[pending] = self.fixed_asset.data.root_pos_w[pending_env_ids]
+                object_quat_w[pending] = self.fixed_asset.data.root_quat_w[pending_env_ids]
+
+        if pending.numel() != 0:
+            raise RuntimeError(
+                "Unable to sample grasp-dataset end-effector poses satisfying the PhysCoder workspace "
+                f"constraints for environment IDs {env_ids[pending].tolist()} after "
+                f"{self.workspace_max_sampling_attempts} attempts."
+            )
+        return grasp_indices, gripper_pos_w, gripper_quat_w
+
+    def _place_grasps(
+        self,
+        env: ManagerBasedEnv,
+        env_ids: torch.Tensor,
+        grasp_indices: torch.Tensor,
+        gripper_pos_w: torch.Tensor,
+        gripper_quat_w: torch.Tensor,
+    ) -> None:
+        """Solve arm IK and restore the sampled grasp's gripper joint state."""
+        pos_b, quat_b = self.solver._compute_frame_pose()
+        pos_b[env_ids], quat_b[env_ids] = math_utils.subtract_frame_transforms(
+            self.robot.data.root_link_pos_w[env_ids],
+            self.robot.data.root_link_quat_w[env_ids],
+            gripper_pos_w,
+            gripper_quat_w,
+        )
+        self.solver.process_actions(torch.cat([pos_b, quat_b], dim=1))
+
+        for _ in range(25):
+            self.solver.apply_actions()
+            delta_joint_pos = 0.25 * (self.robot.data.joint_pos_target[env_ids] - self.robot.data.joint_pos[env_ids])
+            self.robot.write_joint_state_to_sim(
+                position=(delta_joint_pos + self.robot.data.joint_pos[env_ids])[:, self.joint_ids],
+                velocity=torch.zeros((len(env_ids), self.n_joints), device=env.device),
+                joint_ids=self.joint_ids,
+                env_ids=env_ids,  # type: ignore
+            )
+            env.sim.forward()
+            env.scene.update(0.0)
+
+        sampled_gripper_positions = self.gripper_joint_positions[grasp_indices]
+        self.robot.write_joint_state_to_sim(
+            position=sampled_gripper_positions,
+            velocity=torch.zeros_like(sampled_gripper_positions),
+            joint_ids=self.gripper_joint_ids,
+            env_ids=env_ids,
+        )
+        env.sim.forward()
+        env.scene.update(0.0)
+
     def __call__(
         self,
         env: ManagerBasedEnv,
@@ -807,67 +1331,56 @@ class reset_end_effector_from_grasp_dataset(ManagerTermBase):
         robot_ik_cfg: SceneEntityCfg,
         gripper_cfg: SceneEntityCfg,
         pose_range_b: dict[str, tuple[float, float]] = dict(),
+        workspace_box_cfg: SceneEntityCfg | None = None,
+        workspace_profiles: dict[str, str] | None = None,
+        workspace_xy_half_extent: float = 0.09,
+        workspace_relative_z_range: tuple[float, float] = (0.17, 0.37),
+        workspace_standoff_range: tuple[float, float] = (0.17, 0.37),
+        workspace_max_sampling_attempts: int = 2048,
+        workspace_resample_object: bool = False,
+        workspace_object_xy_half_extent: float = 0.09,
+        workspace_object_z_range: tuple[float, float] = (0.025, 0.08),
+        workspace_object_maximum_tilt: float = np.pi / 6.0,
+        workspace_object_resample_interval: int = 256,
+        workspace_collision_attempts: int = 32,
     ) -> None:
         """Apply grasp poses to reset end effector."""
-        # RigidObject asset
-        object_pos_w = self.fixed_asset.data.root_pos_w[env_ids]
-        object_quat_w = self.fixed_asset.data.root_quat_w[env_ids]
-
-        # Randomly sample grasp indices for each environment
-        num_envs = len(env_ids)
-        grasp_indices = torch.randint(0, len(self.rel_positions), (num_envs,), device=env.device)
-
-        # Use pre-computed tensors for sampled grasps
-        sampled_rel_positions = self.rel_positions[grasp_indices]
-        sampled_rel_quaternions = self.rel_quaternions[grasp_indices]
-
-        # Vectorized transform to world coordinates: T_gripper_world = T_object_world * T_relative
-        gripper_pos_w, gripper_quat_w = math_utils.combine_frame_transforms(
-            object_pos_w, object_quat_w, sampled_rel_positions, sampled_rel_quaternions
+        del (
+            workspace_box_cfg,
+            workspace_profiles,
+            workspace_xy_half_extent,
+            workspace_relative_z_range,
+            workspace_standoff_range,
+            workspace_max_sampling_attempts,
+            workspace_resample_object,
+            workspace_object_xy_half_extent,
+            workspace_object_z_range,
+            workspace_object_maximum_tilt,
+            workspace_object_resample_interval,
+            workspace_collision_attempts,
         )
-
-        # Vectorized transform to robot base coordinates
-        pos_b, quat_b = self.solver._compute_frame_pose()
-        pos_b[env_ids], quat_b[env_ids] = math_utils.subtract_frame_transforms(
-            self.robot.data.root_link_pos_w[env_ids],
-            self.robot.data.root_link_quat_w[env_ids],
-            gripper_pos_w,
-            gripper_quat_w,
-        )
-
-        # Add pose variation sampling if ranges are specified (in body frame)
-        if torch.any(self.ranges != 0.0):
-            samples = math_utils.sample_uniform(self.ranges[:, 0], self.ranges[:, 1], (num_envs, 6), device=env.device)
-            pos_b[env_ids], quat_b[env_ids] = math_utils.combine_frame_transforms(
-                pos_b[env_ids],
-                quat_b[env_ids],
-                samples[:, 0:3],
-                math_utils.quat_from_euler_xyz(samples[:, 3], samples[:, 4], samples[:, 5]),
+        pending = torch.arange(len(env_ids), device=env.device)
+        attempts = self.workspace_collision_attempts if self.workspace_filter_active else 1
+        for _ in range(attempts):
+            if pending.numel() == 0:
+                break
+            pending_env_ids = env_ids[pending]
+            grasp_indices, gripper_pos_w, gripper_quat_w = self._sample_grasp_targets(env, pending_env_ids)
+            self._place_grasps(env, pending_env_ids, grasp_indices, gripper_pos_w, gripper_quat_w)
+            collision_free = (
+                self.workspace_collision_analyzer(env, pending_env_ids)
+                if self.workspace_filter_active
+                else torch.ones(len(pending), dtype=torch.bool, device=env.device)
             )
+            pending = pending[~collision_free]
+            if pending.numel() != 0 and self.workspace_resample_object:
+                self._resample_workspace_object(env, env_ids[pending])
 
-        self.solver.process_actions(torch.cat([pos_b, quat_b], dim=1))
-
-        # Solve IK iteratively for better convergence
-        for i in range(25):
-            self.solver.apply_actions()
-            delta_joint_pos = 0.25 * (self.robot.data.joint_pos_target[env_ids] - self.robot.data.joint_pos[env_ids])
-            self.robot.write_joint_state_to_sim(
-                position=(delta_joint_pos + self.robot.data.joint_pos[env_ids])[:, self.joint_ids],
-                velocity=torch.zeros((len(env_ids), self.n_joints), device=env.device),
-                joint_ids=self.joint_ids,
-                env_ids=env_ids,  # type: ignore
+        if pending.numel() != 0:
+            raise RuntimeError(
+                "Unable to place grasp-dataset end-effector poses without robot-box collision for "
+                f"environment IDs {env_ids[pending].tolist()} after {attempts} attempts."
             )
-
-        # Sample gripper joint positions using the same indices
-        sampled_gripper_positions = self.gripper_joint_positions[grasp_indices]
-
-        # Single vectorized write for all environments
-        self.robot.write_joint_state_to_sim(
-            position=sampled_gripper_positions,
-            velocity=torch.zeros_like(sampled_gripper_positions),
-            joint_ids=self.gripper_joint_ids,
-            env_ids=env_ids,
-        )
 
 
 class reset_insertive_object_from_partial_assembly_dataset(ManagerTermBase):
@@ -1258,6 +1771,31 @@ class MultiResetManager(ManagerTermBase):
         self._env.scene.write_data_to_sim()
 
 
+class MultiResetManagerUnlessProfiles(MultiResetManager):
+    """Skip dataset-state restoration for explicitly selected reset profiles."""
+
+    def __init__(self, cfg: EventTermCfg, env: ManagerBasedEnv):
+        self._skip_dataset_reset = scene_matches_reset_profiles(env, cfg.params.get("skip_profiles"))
+        if self._skip_dataset_reset:
+            ManagerTermBase.__init__(self, cfg, env)
+        else:
+            super().__init__(cfg, env)
+
+    def __call__(
+        self,
+        env: ManagerBasedEnv,
+        env_ids: torch.Tensor,
+        dataset_dir: str,
+        reset_types: list[str],
+        probs: list[float],
+        success: str | None = None,
+        skip_profiles: dict[str, str] | None = None,
+    ) -> None:
+        del skip_profiles
+        if not self._skip_dataset_reset:
+            super().__call__(env, env_ids, dataset_dir, reset_types, probs, success)
+
+
 class MultiResetManagerPadded(MultiResetManager):
     """Variant of :class:`MultiResetManager` that zero-pads the robot articulation's
     ``joint_position`` / ``joint_velocity`` tensors to a target DOF count.
@@ -1416,6 +1954,9 @@ class reset_root_states_uniform(ManagerTermBase):
         self.asset_cfgs = list(cfg.params.get("asset_cfgs", dict()).values())
         self.offset_asset_cfg = cfg.params.get("offset_asset_cfg")
         self.offset_use_current_pose = cfg.params.get("offset_use_current_pose", False)
+        conditional_profiles = cfg.params.get("offset_use_current_pose_profiles")
+        if scene_matches_reset_profiles(env, conditional_profiles):
+            self.offset_use_current_pose = True
         self.use_bottom_offset = cfg.params.get("use_bottom_offset", False)
         self.xy_annulus_range = cfg.params.get("xy_annulus_range", None)
 
@@ -1445,9 +1986,11 @@ class reset_root_states_uniform(ManagerTermBase):
         asset_cfgs: dict[str, SceneEntityCfg] = dict(),
         offset_asset_cfg: SceneEntityCfg = None,
         offset_use_current_pose: bool = False,
+        offset_use_current_pose_profiles: dict[str, str] | None = None,
         use_bottom_offset: bool = False,
         xy_annulus_range: tuple[float, float] | None = None,
     ) -> None:
+        del offset_use_current_pose_profiles
         # poses
         rand_pose_samples = math_utils.sample_uniform(
             self.pose_range[:, 0], self.pose_range[:, 1], (len(env_ids), 6), device=env.device
