@@ -27,6 +27,7 @@ BLOCK_USD = custom_cloud_path(
     "Props/Custom/CorneredBlock/block/block.usd",
     f"{UWLAB_ASSETS_EXT_DIR}/uwlab_assets/cornered_block/block/block.usd",
 )
+BLOCK_PHYSCODER_USD = "https://huggingface.co/datasets/bowenli1024/physcoder_usd/resolve/main/objects/single_ur_scene/block/block.usd"
 
 
 @configclass
@@ -195,6 +196,7 @@ variants = {
         "cube": make_object(f"{UWLAB_CLOUD_ASSETS_DIR}/Props/Custom/InsertiveCube/insertive_cube.usd"),
         "rectangle": make_object(f"{UWLAB_CLOUD_ASSETS_DIR}/Props/Custom/Rectangle/rectangle.usd"),
         "block": make_object(BLOCK_USD),
+        "block_physcoder": make_object(BLOCK_PHYSCODER_USD),
     }
 }
 

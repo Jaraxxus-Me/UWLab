@@ -506,6 +506,7 @@ variants = {
         "cube": make_insertive_object(f"{UWLAB_CLOUD_ASSETS_DIR}/Props/Custom/InsertiveCube/insertive_cube.usd"),
         "rectangle": make_insertive_object(f"{UWLAB_CLOUD_ASSETS_DIR}/Props/Custom/Rectangle/rectangle.usd"),
         "block": make_insertive_object(f"{CORNERED_BLOCK_ASSET_DIR}/block/block.usd"),
+        "block_physcoder": make_insertive_object(f"{CORNERED_BLOCK_ASSET_DIR}/block/block.usd"),
     },
     "scene.receptive_object": {
         "fbtabletop": make_receptive_object(
@@ -519,6 +520,7 @@ variants = {
         "cube": make_receptive_object(f"{UWLAB_CLOUD_ASSETS_DIR}/Props/Custom/ReceptiveCube/receptive_cube.usd"),
         "wall": make_receptive_object(f"{UWLAB_CLOUD_ASSETS_DIR}/Props/Custom/Wall/wall.usd"),
         "box": make_receptive_object(f"{CORNERED_BLOCK_ASSET_DIR}/box/box.usd"),
+        "box_physcoder": make_receptive_object(f"{CORNERED_BLOCK_ASSET_DIR}/box/box.usd"),
     },
 }
 
