@@ -9,7 +9,7 @@ checkout, for example:
 ./docker/scripts/tools/collect_resets_box_block.sh
 ```
 
-The wrappers expose all host GPUs by default, use Isaac Sim's `python.sh`, and
+The wrappers expose host GPUs 0, 1, 2, and 3 by default, use Isaac Sim's `python.sh`, and
 bind-mount `source`, `scripts`, `scripts_v2`, `Datasets`, `logs`, `outputs`, and
 `data_storage`. Generated data therefore remains in the host checkout. Isaac
 Sim shader, pip, GL, and CUDA compute caches use persistent Docker volumes.
@@ -20,10 +20,12 @@ Environment variables supported by every launcher:
 
 - `UWLAB_DOCKER_IMAGE`: image name; defaults to
   `bowenli1024/physcoder-uwlab:latest`.
-- `UWLAB_GPUS`: Docker GPU request; defaults to `all`. For a subset, use a
+- `UWLAB_GPUS`: Docker GPU request; defaults to `0,1,2,3`. For another subset, use a
   comma-separated list such as `UWLAB_GPUS=0,1` (the `device=0,1` spelling is
   accepted too).
-- `CUDA_VISIBLE_DEVICES`: optionally restrict the GPUs visible to the process.
+- `CUDA_VISIBLE_DEVICES`: GPUs visible inside the container; defaults to
+  `0,1,2,3`. Override this together with `UWLAB_GPUS` when changing the GPU
+  selection.
 - `UWLAB_SHM_SIZE`: shared-memory size; defaults to `16g`.
 - `UWLAB_ENV_FILE`: optional Docker environment file, useful for W&B settings.
 - `UWLAB_CONTAINER_NAME`: override the generated container name.
@@ -46,9 +48,6 @@ explicit entity setting.
 
 `DATASET_DIR` is also forwarded when present in the host environment.
 
-On an eight-GPU machine, all eight GPUs are available inside the container.
-The existing scripts launch one Isaac Sim process and therefore normally use
-one GPU. Run independent scripts with different `UWLAB_GPUS=device=N` values
-to use the machine concurrently. Converting a training job to distributed
-RSL-RL changes its effective environment count and optimization behavior, so
-these wrappers do not enable `--distributed` implicitly.
+The `train_from_scratch.sh` launcher explicitly starts four distributed
+processes on GPUs 0--3. Other launchers use the selected GPU set but do not
+enable distributed execution implicitly.

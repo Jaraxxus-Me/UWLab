@@ -15,7 +15,8 @@ docker_uwlab_run() {
     shift
 
     local image="${UWLAB_DOCKER_IMAGE:-bowenli1024/physcoder-uwlab:latest}"
-    local gpu_request="${UWLAB_GPUS:-all}"
+    local gpu_request="${UWLAB_GPUS:-0,1,2,3}"
+    local cuda_visible_devices="${CUDA_VISIBLE_DEVICES:-0,1,2,3}"
     local container_name="${UWLAB_CONTAINER_NAME:-uwlab-$(basename "${repo_script}" .sh)-$$}"
     local container_script="/workspace/uwlab/${repo_script}"
     local host_script="${UWLAB_REPO_ROOT}/${repo_script}"
@@ -62,6 +63,7 @@ docker_uwlab_run() {
         -e PYTHONUNBUFFERED=1
         -e UWLAB_PATH=/workspace/uwlab
         -e ISAACSIM_PATH=/isaac-sim
+        -e "CUDA_VISIBLE_DEVICES=${cuda_visible_devices}"
         -e WANDB_DIR=/workspace/uwlab/logs/wandb
         --mount "type=bind,src=${UWLAB_REPO_ROOT}/source,dst=/workspace/uwlab/source"
         --mount "type=bind,src=${UWLAB_REPO_ROOT}/scripts,dst=/workspace/uwlab/scripts"
@@ -88,7 +90,6 @@ docker_uwlab_run() {
 
     local env_name
     for env_name in \
-        CUDA_VISIBLE_DEVICES \
         DATASET_DIR \
         WANDB_API_KEY \
         WANDB_ENTITY \
