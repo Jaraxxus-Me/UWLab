@@ -31,6 +31,11 @@ CORNERED_BLOCK_ASSET_DIR = "https://huggingface.co/datasets/bowenli1024/physcode
 RESYNC_ASSET_DIR = CORNERED_BLOCK_ASSET_DIR
 OMNIRESET_2F140_DATASET_DIR = "./Datasets/OmniResetRealWorkspace"
 PHYSCODER_RESET_PROFILE = "physcoder_box_block"
+RESYNC_RESET_PROFILE = "resync_cube_region"
+RESYNC_PAIR_PROFILES = {
+    "insertive_object": RESYNC_RESET_PROFILE,
+    "receptive_object": RESYNC_RESET_PROFILE,
+}
 
 
 @configclass
@@ -200,6 +205,15 @@ class ResetStatesBaseEventCfg:
                 "insertive_object": PHYSCODER_RESET_PROFILE,
                 "receptive_object": PHYSCODER_RESET_PROFILE,
             },
+            "profile_overrides": [
+                {
+                    "profiles": RESYNC_PAIR_PROFILES,
+                    "pose_range": {
+                        "x": (-0.65, -0.35),
+                        "y": (-0.2, 0.2),
+                    },
+                }
+            ],
         },
     )
 
@@ -225,6 +239,16 @@ class ObjectAnywhereEEAnywhereEventCfg(ResetStatesBaseEventCfg):
             "offset_use_current_pose": True,
             "xy_annulus_range": (0.05, 0.10),
             "use_bottom_offset": True,
+            "profile_overrides": [
+                {
+                    "profiles": RESYNC_PAIR_PROFILES,
+                    "pose_range": {
+                        "roll": (-np.pi, np.pi),
+                        "pitch": (-np.pi, np.pi),
+                    },
+                    "xy_annulus_range": (0.08, 0.12),
+                }
+            ],
         },
     )
 
@@ -245,6 +269,12 @@ class ObjectAnywhereEEAnywhereEventCfg(ResetStatesBaseEventCfg):
             "robot_ik_cfg": SceneEntityCfg(
                 "robot", joint_names=["shoulder.*", "elbow.*", "wrist.*"], body_names="robotiq_base_link"
             ),
+            "gripper_cfg": SceneEntityCfg("robot", joint_names=["finger_joint", ".*right.*", ".*left.*"]),
+            "pregrasp_profiles": RESYNC_PAIR_PROFILES,
+            "pregrasp_xy_radius": 0.05,
+            "pregrasp_height_range": (0.25, 0.35),
+            "pregrasp_max_angle": np.pi / 12,
+            "pregrasp_max_attempts": 32,
             "physcoder_profile": PHYSCODER_RESET_PROFILE,
             "physcoder_box_cfg": SceneEntityCfg("receptive_object"),
             "physcoder_block_cfg": SceneEntityCfg("insertive_object"),
@@ -317,6 +347,8 @@ class ObjectRestingEEGraspedEventCfg(ResetStatesBaseEventCfg):
             "workspace_object_maximum_tilt": np.pi / 6,
             "workspace_object_resample_interval": 64,
             "workspace_collision_attempts": 128,
+            "constraint_profiles": RESYNC_PAIR_PROFILES,
+            "maximum_relative_height": 0.3,
         },
     )
 
@@ -393,6 +425,8 @@ class ObjectAnywhereEEGraspedEventCfg(ResetStatesBaseEventCfg):
             "workspace_object_maximum_tilt": np.pi / 6,
             "workspace_object_resample_interval": 64,
             "workspace_collision_attempts": 128,
+            "constraint_profiles": RESYNC_PAIR_PROFILES,
+            "maximum_relative_height": 0.3,
         },
     )
 
@@ -592,7 +626,9 @@ variants = {
         "block_physcoder": make_insertive_object(
             f"{CORNERED_BLOCK_ASSET_DIR}/block/block.usd", reset_profile=PHYSCODER_RESET_PROFILE
         ),
-        "cube_resync": make_insertive_object(f"{RESYNC_ASSET_DIR}/cube_resync/cube_resync.usd"),
+        "cube_resync": make_insertive_object(
+            f"{RESYNC_ASSET_DIR}/cube_resync/cube_resync.usd", reset_profile=RESYNC_RESET_PROFILE
+        ),
     },
     "scene.receptive_object": {
         "fbtabletop": make_receptive_object(
@@ -609,7 +645,9 @@ variants = {
         "box_physcoder": make_receptive_object(
             f"{CORNERED_BLOCK_ASSET_DIR}/box/box.usd", reset_profile=PHYSCODER_RESET_PROFILE
         ),
-        "region_resync": make_receptive_object(f"{RESYNC_ASSET_DIR}/region_resync/region_resync.usd"),
+        "region_resync": make_receptive_object(
+            f"{RESYNC_ASSET_DIR}/region_resync/region_resync.usd", reset_profile=RESYNC_RESET_PROFILE
+        ),
     },
 }
 
@@ -654,6 +692,25 @@ class UR5eRobotiq2f140ResetStatesCfg(ManagerBasedRLEnvCfg):
         self.sim.render.enable_dl_denoiser = True
 
 
+def _reject_robot_table_collisions(cfg: UR5eRobotiq2f140ResetStatesCfg) -> None:
+    """Require every sampled point on the full robot to remain outside the table."""
+    cfg.terminations.success.params["collision_analyzer_cfgs"].append(
+        task_mdp.CollisionAnalyzerCfg(
+            num_points=1024,
+            max_dist=0.5,
+            min_dist=0.0,
+            asset_cfg=SceneEntityCfg("robot"),
+            obstacle_cfgs=[SceneEntityCfg("table")],
+        )
+    )
+    cfg.terminations.success.params.update(
+        {
+            "robot_minimum_height": 0.0,
+            "robot_minimum_height_excluded_body_names": ["base_link", "shoulder_link"],
+        }
+    )
+
+
 @configclass
 class ObjectAnywhereEEAnywhereResetStatesCfg(UR5eRobotiq2f140ResetStatesCfg):
     events: ObjectAnywhereEEAnywhereEventCfg = ObjectAnywhereEEAnywhereEventCfg()
@@ -661,6 +718,16 @@ class ObjectAnywhereEEAnywhereResetStatesCfg(UR5eRobotiq2f140ResetStatesCfg):
     def __post_init__(self):
         super().__post_init__()
         self.terminations.success.params["max_object_pos_deviation"] = np.inf
+        self.terminations.success.params.update(
+            {
+                "ee_constraint_profiles": RESYNC_PAIR_PROFILES,
+                "ee_reference_object_cfg": SceneEntityCfg("insertive_object"),
+                "ee_xy_distance_max": 0.05,
+                "ee_relative_height_range": (0.25, 0.35),
+                "ee_max_approach_angle": np.pi / 12,
+                "ee_require_open_gripper": True,
+            }
+        )
 
 
 @configclass
@@ -669,7 +736,15 @@ class ObjectRestingEEGraspedResetStatesCfg(UR5eRobotiq2f140ResetStatesCfg):
 
     def __post_init__(self):
         super().__post_init__()
+        _reject_robot_table_collisions(self)
         self.terminations.success.params["max_object_pos_deviation"] = 0.01
+        self.terminations.success.params.update(
+            {
+                "ee_constraint_profiles": RESYNC_PAIR_PROFILES,
+                "ee_reference_object_cfg": SceneEntityCfg("insertive_object"),
+                "ee_relative_height_range": (None, 0.3),
+            }
+        )
 
 
 @configclass
@@ -678,7 +753,15 @@ class ObjectAnywhereEEGraspedResetStatesCfg(UR5eRobotiq2f140ResetStatesCfg):
 
     def __post_init__(self):
         super().__post_init__()
+        _reject_robot_table_collisions(self)
         self.terminations.success.params["max_object_pos_deviation"] = 0.05
+        self.terminations.success.params.update(
+            {
+                "ee_constraint_profiles": RESYNC_PAIR_PROFILES,
+                "ee_reference_object_cfg": SceneEntityCfg("insertive_object"),
+                "ee_relative_height_range": (None, 0.3),
+            }
+        )
 
 
 @configclass
@@ -700,6 +783,7 @@ class ObjectPartiallyAssembledEEGraspedResetStatesCfg(UR5eRobotiq2f140ResetState
 
     def __post_init__(self):
         super().__post_init__()
+        _reject_robot_table_collisions(self)
         self.terminations.success.params["max_object_pos_deviation"] = 0.025
         self.terminations.success.params["insertive_asset_cfg"] = SceneEntityCfg("insertive_object")
         self.terminations.success.params["receptive_asset_cfg"] = SceneEntityCfg("receptive_object")

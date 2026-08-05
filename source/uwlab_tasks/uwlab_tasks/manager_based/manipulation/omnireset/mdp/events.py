@@ -73,6 +73,14 @@ def scene_matches_reset_profiles(env: ManagerBasedEnv, profiles: dict[str, str] 
     return all(getattr(env.scene[name].cfg, "reset_profile", None) == profile for name, profile in profiles.items())
 
 
+def _matching_profile_override(env: ManagerBasedEnv, overrides: list[dict] | None) -> dict:
+    """Return the first reset-policy override whose scene profiles match."""
+    for override in overrides or []:
+        if scene_matches_reset_profiles(env, override.get("profiles")):
+            return override
+    return {}
+
+
 class _GraspSamplingEvent(ManagerTermBase):
     """EventTerm class for grasp sampling and positioning gripper."""
 
@@ -731,7 +739,175 @@ class reset_end_effector_round_fixed_asset(ManagerTermBase):
             )
 
 
-class reset_end_effector_round_fixed_asset_or_physcoder_submdp(reset_end_effector_round_fixed_asset):
+class reset_end_effector_top_down_pregrasp_or_default(reset_end_effector_round_fixed_asset):
+    """Use an exact top-down, open-gripper pre-grasp for an explicitly tagged asset pair."""
+
+    def __init__(self, cfg: EventTermCfg, env: ManagerBasedEnv):
+        super().__init__(cfg, env)
+        self._pregrasp_active = scene_matches_reset_profiles(env, cfg.params.get("pregrasp_profiles"))
+        if not self._pregrasp_active:
+            return
+
+        fixed_asset_cfg: SceneEntityCfg = cfg.params.get("fixed_asset_cfg")
+        robot_ik_cfg: SceneEntityCfg = cfg.params.get("robot_ik_cfg")
+        gripper_cfg: SceneEntityCfg = cfg.params.get("gripper_cfg")
+        self._pregrasp_object: RigidObject = env.scene[fixed_asset_cfg.name]
+        self._pregrasp_body_id = robot_ik_cfg.body_ids[0]
+        self._pregrasp_gripper_joint_ids = gripper_cfg.joint_ids
+        self._pregrasp_xy_radius = float(cfg.params.get("pregrasp_xy_radius", 0.05))
+        self._pregrasp_height_range = tuple(cfg.params.get("pregrasp_height_range", (0.25, 0.35)))
+        self._pregrasp_max_angle = float(cfg.params.get("pregrasp_max_angle", np.pi / 12.0))
+        self._pregrasp_max_attempts = int(cfg.params.get("pregrasp_max_attempts", 32))
+
+    def __call__(
+        self,
+        env: ManagerBasedEnv,
+        env_ids: torch.Tensor,
+        fixed_asset_cfg: SceneEntityCfg,
+        fixed_asset_offset: Offset,
+        pose_range_b: dict[str, tuple[float, float]],
+        robot_ik_cfg: SceneEntityCfg,
+        gripper_cfg: SceneEntityCfg | None = None,
+        pregrasp_profiles: dict[str, str] | None = None,
+        pregrasp_xy_radius: float = 0.05,
+        pregrasp_height_range: tuple[float, float] = (0.25, 0.35),
+        pregrasp_max_angle: float = np.pi / 12.0,
+        pregrasp_max_attempts: int = 32,
+    ) -> None:
+        del (
+            gripper_cfg,
+            pregrasp_profiles,
+            pregrasp_xy_radius,
+            pregrasp_height_range,
+            pregrasp_max_angle,
+            pregrasp_max_attempts,
+        )
+        if not self._pregrasp_active:
+            return super().__call__(env, env_ids, fixed_asset_cfg, fixed_asset_offset, pose_range_b, robot_ik_cfg)
+
+        pending_ids = env_ids.clone()
+        for _ in range(self._pregrasp_max_attempts):
+            if pending_ids.numel() == 0:
+                break
+            target_pos, target_quat = self._sample_pregrasp_targets(env, pending_ids)
+            self._place_pregrasp(env, pending_ids, target_pos, target_quat)
+            accepted = self._valid_pregrasp(env, pending_ids)
+            pending_ids = pending_ids[~accepted]
+
+        if pending_ids.numel() != 0:
+            raise RuntimeError(
+                "Unable to solve a top-down open-gripper pre-grasp for environment IDs "
+                f"{pending_ids.tolist()} after {self._pregrasp_max_attempts} attempts."
+            )
+
+    def _sample_pregrasp_targets(
+        self, env: ManagerBasedEnv, env_ids: torch.Tensor
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        count = len(env_ids)
+        object_pos = self._pregrasp_object.data.root_pos_w[env_ids]
+
+        # Uniform by disk area and strictly inside the requested XY radius.
+        radius = self._pregrasp_xy_radius * 0.999 * torch.sqrt(torch.rand(count, device=env.device))
+        azimuth = 2.0 * np.pi * torch.rand(count, device=env.device)
+        height = math_utils.sample_uniform(
+            self._pregrasp_height_range[0], self._pregrasp_height_range[1], (count,), device=env.device
+        )
+        target_pos = object_pos.clone()
+        target_pos[:, 0] += radius * torch.cos(azimuth)
+        target_pos[:, 1] += radius * torch.sin(azimuth)
+        target_pos[:, 2] += height
+
+        # Sample local +Z inside a world -Z cone, then sample free roll about it.
+        cos_min = float(np.cos(self._pregrasp_max_angle))
+        cos_tilt = math_utils.sample_uniform(cos_min, 1.0, (count,), device=env.device)
+        sin_tilt = torch.sqrt(torch.clamp(1.0 - cos_tilt.square(), min=0.0))
+        tilt_azimuth = 2.0 * np.pi * torch.rand(count, device=env.device)
+        z_axis = torch.stack(
+            (sin_tilt * torch.cos(tilt_azimuth), sin_tilt * torch.sin(tilt_azimuth), -cos_tilt), dim=-1
+        )
+        roll = 2.0 * np.pi * torch.rand(count, device=env.device)
+        x_reference = torch.stack((torch.cos(roll), torch.sin(roll), torch.zeros_like(roll)), dim=-1)
+        x_axis = torch.nn.functional.normalize(
+            x_reference - torch.sum(x_reference * z_axis, dim=-1, keepdim=True) * z_axis, dim=-1
+        )
+        y_axis = torch.linalg.cross(z_axis, x_axis, dim=-1)
+        target_quat = math_utils.quat_from_matrix(torch.stack((x_axis, y_axis, z_axis), dim=-1))
+        return target_pos, target_quat
+
+    def _place_pregrasp(
+        self, env: ManagerBasedEnv, env_ids: torch.Tensor, target_pos: torch.Tensor, target_quat: torch.Tensor
+    ) -> None:
+        # Restart failed IK attempts from the nominal arm configuration.
+        default_position = self.robot.data.default_joint_pos[env_ids].clone()
+        self.robot.write_joint_state_to_sim(
+            default_position[:, self.joint_ids],
+            torch.zeros((len(env_ids), self.n_joints), device=env.device),
+            joint_ids=self.joint_ids,
+            env_ids=env_ids,
+        )
+        env.sim.forward()
+        env.scene.update(0.0)
+
+        pos_b, quat_b = self.solver._compute_frame_pose()
+        pos_b[env_ids], quat_b[env_ids] = math_utils.subtract_frame_transforms(
+            self.robot.data.root_link_pos_w[env_ids],
+            self.robot.data.root_link_quat_w[env_ids],
+            target_pos,
+            target_quat,
+        )
+        self.solver.process_actions(torch.cat((pos_b, quat_b), dim=-1))
+        for _ in range(30):
+            self.solver.apply_actions()
+            delta = 0.25 * (self.robot.data.joint_pos_target[env_ids] - self.robot.data.joint_pos[env_ids])
+            self.robot.write_joint_state_to_sim(
+                (self.robot.data.joint_pos[env_ids] + delta)[:, self.joint_ids],
+                torch.zeros((len(env_ids), self.n_joints), device=env.device),
+                joint_ids=self.joint_ids,
+                env_ids=env_ids,
+            )
+            env.sim.forward()
+            env.scene.update(0.0)
+
+        # The pre-grasp reset is explicitly open, including all mimic joints.
+        open_position = self.robot.data.default_joint_pos[env_ids][:, self._pregrasp_gripper_joint_ids]
+        open_velocity = torch.zeros_like(open_position)
+        self.robot.write_joint_state_to_sim(
+            open_position,
+            open_velocity,
+            joint_ids=self._pregrasp_gripper_joint_ids,
+            env_ids=env_ids,
+        )
+        self.robot.set_joint_position_target(
+            open_position, joint_ids=self._pregrasp_gripper_joint_ids, env_ids=env_ids
+        )
+        self.robot.set_joint_velocity_target(
+            open_velocity, joint_ids=self._pregrasp_gripper_joint_ids, env_ids=env_ids
+        )
+        env.sim.forward()
+        env.scene.update(0.0)
+
+    def _valid_pregrasp(self, env: ManagerBasedEnv, env_ids: torch.Tensor) -> torch.Tensor:
+        actual_pos = self.robot.data.body_pos_w[env_ids, self._pregrasp_body_id]
+        actual_quat = self.robot.data.body_quat_w[env_ids, self._pregrasp_body_id]
+        relative_pos = actual_pos - self._pregrasp_object.data.root_pos_w[env_ids]
+        local_z = torch.zeros((len(env_ids), 3), device=env.device)
+        local_z[:, 2] = 1.0
+        approach = math_utils.quat_apply(actual_quat, local_z)
+        angle_valid = approach[:, 2] <= -float(np.cos(self._pregrasp_max_angle))
+        position_valid = (
+            (torch.linalg.vector_norm(relative_pos[:, :2], dim=-1) < self._pregrasp_xy_radius)
+            & (relative_pos[:, 2] >= self._pregrasp_height_range[0])
+            & (relative_pos[:, 2] <= self._pregrasp_height_range[1])
+        )
+        open_position = self.robot.data.default_joint_pos[env_ids][:, self._pregrasp_gripper_joint_ids]
+        gripper_open = torch.all(
+            torch.abs(self.robot.data.joint_pos[env_ids][:, self._pregrasp_gripper_joint_ids] - open_position) < 1.0e-4,
+            dim=-1,
+        )
+        return position_valid & angle_valid & gripper_open
+
+
+class reset_end_effector_round_fixed_asset_or_physcoder_submdp(reset_end_effector_top_down_pregrasp_or_default):
     """Use the canonical PhysCoder corner-block reset for its explicitly tagged asset pair."""
 
     _BOX_POSE_RANGE = {
@@ -832,11 +1008,28 @@ class reset_end_effector_round_fixed_asset_or_physcoder_submdp(reset_end_effecto
         physcoder_box_cfg: SceneEntityCfg | None = None,
         physcoder_block_cfg: SceneEntityCfg | None = None,
         physcoder_support_cfg: SceneEntityCfg | None = None,
+        gripper_cfg: SceneEntityCfg | None = None,
+        pregrasp_profiles: dict[str, str] | None = None,
+        pregrasp_xy_radius: float = 0.05,
+        pregrasp_height_range: tuple[float, float] = (0.25, 0.35),
+        pregrasp_max_angle: float = np.pi / 12.0,
+        pregrasp_max_attempts: int = 32,
     ) -> None:
         del physcoder_profile, physcoder_box_cfg, physcoder_block_cfg, physcoder_support_cfg
         if not self._physcoder_active:
             return super().__call__(
-                env, env_ids, fixed_asset_cfg, fixed_asset_offset, pose_range_b, robot_ik_cfg
+                env,
+                env_ids,
+                fixed_asset_cfg,
+                fixed_asset_offset,
+                pose_range_b,
+                robot_ik_cfg,
+                gripper_cfg,
+                pregrasp_profiles,
+                pregrasp_xy_radius,
+                pregrasp_height_range,
+                pregrasp_max_angle,
+                pregrasp_max_attempts,
             )
 
         pending_ids = env_ids.clone()
@@ -1134,6 +1327,12 @@ class reset_end_effector_from_grasp_dataset(ManagerTermBase):
         )
         self.workspace_object_resample_interval = int(cfg.params.get("workspace_object_resample_interval", 256))
         self.workspace_collision_attempts = int(cfg.params.get("workspace_collision_attempts", 32))
+        self.maximum_relative_height = cfg.params.get("maximum_relative_height")
+        self.relative_height_filter_active = bool(
+            self.maximum_relative_height is not None
+            and scene_matches_reset_profiles(env, cfg.params.get("constraint_profiles"))
+        )
+        self.constraint_max_sampling_attempts = int(cfg.params.get("constraint_max_sampling_attempts", 2048))
         if self.workspace_filter_active:
             collision_cfg = CollisionAnalyzerCfg(
                 num_points=128,
@@ -1251,7 +1450,12 @@ class reset_end_effector_from_grasp_dataset(ManagerTermBase):
         gripper_quat_w = torch.empty((count, 4), dtype=torch.float32, device=env.device)
 
         pending = torch.arange(count, device=env.device)
-        for attempt in range(self.workspace_max_sampling_attempts if self.workspace_filter_active else 1):
+        sampling_attempts = (
+            max(self.workspace_max_sampling_attempts, self.constraint_max_sampling_attempts)
+            if self.workspace_filter_active or self.relative_height_filter_active
+            else 1
+        )
+        for attempt in range(sampling_attempts):
             if pending.numel() == 0:
                 break
             candidate_indices = torch.randint(0, len(self.rel_positions), (len(pending),), device=env.device)
@@ -1286,6 +1490,9 @@ class reset_end_effector_from_grasp_dataset(ManagerTermBase):
                 )
             else:
                 accepted = torch.ones(len(pending), dtype=torch.bool, device=env.device)
+            if self.relative_height_filter_active:
+                relative_height = candidate_pos[:, 2] - object_pos_w[pending, 2]
+                accepted &= relative_height <= float(self.maximum_relative_height)
 
             accepted_rows = pending[accepted]
             grasp_indices[accepted_rows] = candidate_indices[accepted]
@@ -1307,7 +1514,7 @@ class reset_end_effector_from_grasp_dataset(ManagerTermBase):
             raise RuntimeError(
                 "Unable to sample grasp-dataset end-effector poses satisfying the PhysCoder workspace "
                 f"constraints for environment IDs {env_ids[pending].tolist()} after "
-                f"{self.workspace_max_sampling_attempts} attempts."
+                f"{sampling_attempts} attempts."
             )
         return grasp_indices, gripper_pos_w, gripper_quat_w
 
@@ -1372,6 +1579,9 @@ class reset_end_effector_from_grasp_dataset(ManagerTermBase):
         workspace_object_maximum_tilt: float = np.pi / 6.0,
         workspace_object_resample_interval: int = 256,
         workspace_collision_attempts: int = 32,
+        constraint_profiles: dict[str, str] | None = None,
+        maximum_relative_height: float | None = None,
+        constraint_max_sampling_attempts: int = 2048,
     ) -> None:
         """Apply grasp poses to reset end effector."""
         del (
@@ -1387,6 +1597,9 @@ class reset_end_effector_from_grasp_dataset(ManagerTermBase):
             workspace_object_maximum_tilt,
             workspace_object_resample_interval,
             workspace_collision_attempts,
+            constraint_profiles,
+            maximum_relative_height,
+            constraint_max_sampling_attempts,
         )
         pending = torch.arange(len(env_ids), device=env.device)
         attempts = self.workspace_collision_attempts if self.workspace_filter_active else 1
@@ -1973,6 +2186,10 @@ class reset_root_states_uniform(ManagerTermBase):
         pose_range_dict = cfg.params.get("pose_range")
         velocity_range_dict = cfg.params.get("velocity_range")
 
+        profile_override = _matching_profile_override(env, cfg.params.get("profile_overrides"))
+        pose_range_dict = {**pose_range_dict, **profile_override.get("pose_range", {})}
+        velocity_range_dict = {**velocity_range_dict, **profile_override.get("velocity_range", {})}
+
         self.pose_range = torch.tensor(
             [pose_range_dict.get(key, (0.0, 0.0)) for key in ["x", "y", "z", "roll", "pitch", "yaw"]], device=env.device
         )
@@ -1987,7 +2204,7 @@ class reset_root_states_uniform(ManagerTermBase):
         if scene_matches_reset_profiles(env, conditional_profiles):
             self.offset_use_current_pose = True
         self.use_bottom_offset = cfg.params.get("use_bottom_offset", False)
-        self.xy_annulus_range = cfg.params.get("xy_annulus_range", None)
+        self.xy_annulus_range = profile_override.get("xy_annulus_range", cfg.params.get("xy_annulus_range", None))
 
         if self.use_bottom_offset:
             self.bottom_offset_positions = dict()
@@ -2018,8 +2235,9 @@ class reset_root_states_uniform(ManagerTermBase):
         offset_use_current_pose_profiles: dict[str, str] | None = None,
         use_bottom_offset: bool = False,
         xy_annulus_range: tuple[float, float] | None = None,
+        profile_overrides: list[dict] | None = None,
     ) -> None:
-        del offset_use_current_pose_profiles
+        del offset_use_current_pose_profiles, profile_overrides
         # poses
         rand_pose_samples = math_utils.sample_uniform(
             self.pose_range[:, 0], self.pose_range[:, 1], (len(env_ids), 6), device=env.device

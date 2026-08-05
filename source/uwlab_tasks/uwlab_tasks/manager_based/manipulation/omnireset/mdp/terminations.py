@@ -20,6 +20,12 @@ from ..assembly_keypoints import Offset
 from .collision_analyzer_cfg import CollisionAnalyzerCfg
 
 
+def _scene_matches_reset_profiles(env: ManagerBasedEnv, profiles: dict[str, str] | None) -> bool:
+    if not profiles:
+        return False
+    return all(getattr(env.scene[name].cfg, "reset_profile", None) == profile for name, profile in profiles.items())
+
+
 def _check_obb_overlap(centroids_a, axes_a, half_extents_a, centroids_b, axes_b, half_extents_b) -> torch.Tensor:
     """
     OBB overlap check.
@@ -243,6 +249,10 @@ class check_reset_state_success(ManagerTermBase):
         usd_path = robot_asset.cfg.spawn.usd_path
         metadata = utils.read_metadata_from_usd_directory(usd_path)
         self.gripper_approach_direction = tuple(metadata.get("gripper_approach_direction"))
+        approach_norm = float(np.linalg.norm(self.gripper_approach_direction))
+        if approach_norm <= 1.0e-8:
+            raise ValueError(f"Invalid gripper_approach_direction in metadata for {usd_path}")
+        self.gripper_approach_direction = tuple(axis / approach_norm for axis in self.gripper_approach_direction)
 
         # Initialize stability counter for consecutive stability checking
         self.stability_counter = torch.zeros(env.num_envs, device=env.device, dtype=torch.int32)
@@ -251,6 +261,44 @@ class check_reset_state_success(ManagerTermBase):
         self.robot_asset = env.scene[self.robot_cfg.name]
         self.assets_to_check = self.object_assets + [self.robot_asset]
         self.ee_body_idx = self.robot_asset.data.body_names.index(self.ee_body_name)
+
+        # Thin/open tabletop meshes can report a positive signed distance even
+        # after a link has crossed through them.  This optional conservative
+        # check rejects any sampled collision point on movable robot links that
+        # falls below the tabletop plane.  Mounting links may be excluded.
+        self.robot_minimum_height = cfg.params.get("robot_minimum_height")
+        if self.robot_minimum_height is not None:
+            excluded_names = set(cfg.params.get("robot_minimum_height_excluded_body_names", []))
+            robot_analyzers = [
+                analyzer
+                for analyzer in self.collision_analyzers
+                if analyzer.asset is self.robot_asset and hasattr(analyzer, "body_ids")
+            ]
+            if not robot_analyzers:
+                raise ValueError("robot_minimum_height requires a robot CollisionAnalyzer with sampled body points")
+            geometry_analyzer = max(robot_analyzers, key=lambda analyzer: len(analyzer.body_ids))
+            included_indices = [
+                index
+                for index, body_id in enumerate(geometry_analyzer.body_ids.tolist())
+                if self.robot_asset.body_names[body_id] not in excluded_names
+            ]
+            if not included_indices:
+                raise ValueError("robot_minimum_height excludes every sampled robot body")
+            self.robot_height_body_ids = geometry_analyzer.body_ids[included_indices]
+            self.robot_height_local_pts = geometry_analyzer.local_pts[:, included_indices]
+
+        # Optional pair-specific EE constraints used to guarantee properties of
+        # exported reset-state datasets, not merely their initial IK targets.
+        self.ee_constraint_active = _scene_matches_reset_profiles(env, cfg.params.get("ee_constraint_profiles"))
+        if self.ee_constraint_active:
+            ee_reference_object_cfg = cfg.params.get("ee_reference_object_cfg")
+            self.ee_reference_object = env.scene[ee_reference_object_cfg.name]
+            self.ee_xy_distance_max = cfg.params.get("ee_xy_distance_max")
+            self.ee_relative_height_range = cfg.params.get("ee_relative_height_range")
+            self.ee_max_approach_angle = cfg.params.get("ee_max_approach_angle")
+            self.ee_require_open_gripper = bool(cfg.params.get("ee_require_open_gripper", False))
+            finger_ids, _ = self.robot_asset.find_joints("finger_joint")
+            self.ee_finger_joint_id = finger_ids[0]
 
         # Optional assembly alignment filter
         self.assembly_success_prob = cfg.params.get("assembly_success_prob")
@@ -328,7 +376,25 @@ class check_reset_state_success(ManagerTermBase):
         receptive_asset_cfg: SceneEntityCfg | None = None,
         assembly_success_prob: float | None = None,
         assembly_threshold_scale: float = 1.0,
+        ee_constraint_profiles: dict[str, str] | None = None,
+        ee_reference_object_cfg: SceneEntityCfg | None = None,
+        ee_xy_distance_max: float | None = None,
+        ee_relative_height_range: tuple[float | None, float | None] | None = None,
+        ee_max_approach_angle: float | None = None,
+        ee_require_open_gripper: bool = False,
+        robot_minimum_height: float | None = None,
+        robot_minimum_height_excluded_body_names: list[str] | None = None,
     ) -> torch.Tensor:
+        del (
+            ee_constraint_profiles,
+            ee_reference_object_cfg,
+            ee_xy_distance_max,
+            ee_relative_height_range,
+            ee_max_approach_angle,
+            ee_require_open_gripper,
+            robot_minimum_height,
+            robot_minimum_height_excluded_body_names,
+        )
 
         # Check time out
         time_out = env.episode_length_buf >= env.max_episode_length
@@ -338,7 +404,8 @@ class check_reset_state_success(ManagerTermBase):
             self.robot_asset.data.joint_vel.abs() > (self.robot_asset.data.joint_vel_limits * 2)
         ).any(dim=1)
 
-        # Check if gripper orientation is pointing downward within 60 degrees of vertical
+        # Check whether the physical approach axis points downward within 60 degrees.
+        # This axis is metadata-driven because 2F85 uses EE-local +X while 2F140 uses EE-local +Z.
         ee_quat = self.robot_asset.data.body_link_quat_w[:, self.ee_body_idx]
         gripper_approach_local = torch.tensor(
             self.gripper_approach_direction, device=env.device, dtype=torch.float32
@@ -399,6 +466,7 @@ class check_reset_state_success(ManagerTermBase):
             torch.stack([collision_analyzer(env, all_env_ids) for collision_analyzer in self.collision_analyzers]),
             dim=0,
         )
+        robot_above_minimum_height = self.robot_above_minimum_height(all_env_ids)
 
         reset_success = (
             (~abnormal_gripper_state)
@@ -407,8 +475,37 @@ class check_reset_state_success(ManagerTermBase):
             & (~excessive_pose_deviation)
             & (~pos_below_threshold)
             & collision_free
+            & robot_above_minimum_height
             & time_out
         )
+
+        if self.ee_constraint_active:
+            ee_pos = self.robot_asset.data.body_link_pos_w[:, self.ee_body_idx]
+            relative_pos = ee_pos - self.ee_reference_object.data.root_pos_w
+            ee_constraint_satisfied = torch.ones(env.num_envs, dtype=torch.bool, device=env.device)
+            if self.ee_xy_distance_max is not None:
+                ee_constraint_satisfied &= (
+                    torch.linalg.vector_norm(relative_pos[:, :2], dim=-1) < self.ee_xy_distance_max
+                )
+            if self.ee_relative_height_range is not None:
+                minimum_height, maximum_height = self.ee_relative_height_range
+                if minimum_height is not None:
+                    ee_constraint_satisfied &= relative_pos[:, 2] >= minimum_height
+                if maximum_height is not None:
+                    ee_constraint_satisfied &= relative_pos[:, 2] <= maximum_height
+            if self.ee_max_approach_angle is not None:
+                ee_constraint_satisfied &= gripper_approach_world[:, 2] <= -float(
+                    np.cos(self.ee_max_approach_angle)
+                )
+            if self.ee_require_open_gripper:
+                default_finger_position = self.robot_asset.data.default_joint_pos[:, self.ee_finger_joint_id]
+                ee_constraint_satisfied &= (
+                    torch.abs(
+                        self.robot_asset.data.joint_pos[:, self.ee_finger_joint_id] - default_finger_position
+                    )
+                    < 0.05
+                )
+            reset_success &= ee_constraint_satisfied
 
         if self.assembly_success_prob is not None:
             ins_pos_w, ins_quat_w = self.insertive_asset_offset.apply(self.insertive_asset)
@@ -423,6 +520,20 @@ class check_reset_state_success(ManagerTermBase):
             self._pending_reflip |= reset_success
 
         return reset_success
+
+    def robot_above_minimum_height(self, env_ids: torch.Tensor) -> torch.Tensor:
+        """Conservatively keep movable robot collision geometry above the tabletop plane."""
+        if self.robot_minimum_height is None:
+            return torch.ones(len(env_ids), dtype=torch.bool, device=self._env.device)
+        num_points = self.robot_height_local_pts.shape[2]
+        positions = self.robot_asset.data.body_link_pos_w[env_ids][:, self.robot_height_body_ids].unsqueeze(2)
+        orientations = (
+            self.robot_asset.data.body_link_quat_w[env_ids][:, self.robot_height_body_ids]
+            .unsqueeze(2)
+            .expand(-1, -1, num_points, -1)
+        )
+        points_world = math_utils.quat_apply(orientations, self.robot_height_local_pts[env_ids]) + positions
+        return points_world[..., 2].amin(dim=(1, 2)) >= float(self.robot_minimum_height)
 
 
 class check_obb_no_overlap_termination(ManagerTermBase):
