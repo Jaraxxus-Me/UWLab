@@ -46,6 +46,8 @@ docker_uwlab_run() {
 
     local -a docker_args=(
         run
+        --attach stdout
+        --attach stderr
         --gpus "${gpu_request}"
         --network host
         --shm-size "${UWLAB_SHM_SIZE:-16g}"
@@ -57,6 +59,8 @@ docker_uwlab_run() {
         -e PRIVACY_CONSENT=Y
         -e OMNI_KIT_ALLOW_ROOT=1
         -e PYTHONUNBUFFERED=1
+        -e UWLAB_PATH=/workspace/uwlab
+        -e ISAACSIM_PATH=/isaac-sim
         --mount "type=bind,src=${UWLAB_REPO_ROOT}/source,dst=/workspace/uwlab/source"
         --mount "type=bind,src=${UWLAB_REPO_ROOT}/scripts,dst=/workspace/uwlab/scripts"
         --mount "type=bind,src=${UWLAB_REPO_ROOT}/scripts_v2,dst=/workspace/uwlab/scripts_v2"
@@ -118,7 +122,18 @@ docker_uwlab_run() {
         -lc
         # Export a Bash function so every legacy `python ...` line uses Isaac Sim's
         # environment-aware Python launcher without rewriting the original scripts.
-        'python() { /isaac-sim/python.sh "$@"; }; export -f python; cd /workspace/uwlab; exec bash "$@"'
+        'set -euo pipefail
+        for required_path in source scripts scripts_v2 tools uwlab.sh Datasets data_storage logs outputs; do
+            if [[ ! -e "/workspace/uwlab/${required_path}" ]]; then
+                echo "[uwlab-docker] Missing host bind mount: /workspace/uwlab/${required_path}" >&2
+                exit 2
+            fi
+        done
+        python() { /isaac-sim/python.sh "$@"; }
+        export -f python
+        cd /workspace/uwlab
+        echo "[uwlab-docker] Live host checkout mounted at /workspace/uwlab; streaming container stdout/stderr." >&2
+        exec bash "$@"'
         uwlab-docker
         "${container_script}"
         "$@"
