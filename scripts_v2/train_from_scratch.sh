@@ -1,8 +1,15 @@
-python scripts/reinforcement_learning/rsl_rl/train.py \
+DATASET_DIR=${DATASET_DIR:-./Datasets/ReSYNC_Rebuttal}
+
+python -m torch.distributed.run \
+    --nnodes 1 \
+    --nproc_per_node 4 \
+    scripts/reinforcement_learning/rsl_rl/train.py \
     --task OmniReset-Ur5eRobotiq2f140-RelCartesianOSC-State-v0 \
-    --num_envs 8192 \
+    --num_envs 16384 \
     --logger wandb \
     --headless \
-    env.scene.insertive_object=block \
-    env.scene.receptive_object=box \
-    env.events.reset_from_reset_states.params.dataset_dir=./Datasets/OmniResetRealWorkspace
+    --distributed \
+    env.scene.insertive_object=cube_resync \
+    env.scene.receptive_object=region_resync \
+    env.events.reset_from_reset_states.params.dataset_dir="${DATASET_DIR}" \
+    "$@"

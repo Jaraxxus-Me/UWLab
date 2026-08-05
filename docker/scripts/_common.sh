@@ -15,7 +15,8 @@ docker_uwlab_run() {
     shift
 
     local image="${UWLAB_DOCKER_IMAGE:-bowenli1024/physcoder-uwlab:latest}"
-    local gpu_request="${UWLAB_GPUS:-all}"
+    local gpu_request="${UWLAB_GPUS:-0,1,2,3}"
+    local cuda_visible_devices="${CUDA_VISIBLE_DEVICES:-0,1,2,3}"
     local container_name="${UWLAB_CONTAINER_NAME:-uwlab-$(basename "${repo_script}" .sh)-$$}"
     local container_script="/workspace/uwlab/${repo_script}"
     local host_script="${UWLAB_REPO_ROOT}/${repo_script}"
@@ -42,6 +43,7 @@ docker_uwlab_run() {
         "${UWLAB_REPO_ROOT}/Datasets" \
         "${UWLAB_REPO_ROOT}/data_storage" \
         "${UWLAB_REPO_ROOT}/logs" \
+        "${UWLAB_REPO_ROOT}/logs/wandb" \
         "${UWLAB_REPO_ROOT}/outputs"
 
     local -a docker_args=(
@@ -61,6 +63,8 @@ docker_uwlab_run() {
         -e PYTHONUNBUFFERED=1
         -e UWLAB_PATH=/workspace/uwlab
         -e ISAACSIM_PATH=/isaac-sim
+        -e "CUDA_VISIBLE_DEVICES=${cuda_visible_devices}"
+        -e WANDB_DIR=/workspace/uwlab/logs/wandb
         --mount "type=bind,src=${UWLAB_REPO_ROOT}/source,dst=/workspace/uwlab/source"
         --mount "type=bind,src=${UWLAB_REPO_ROOT}/scripts,dst=/workspace/uwlab/scripts"
         --mount "type=bind,src=${UWLAB_REPO_ROOT}/scripts_v2,dst=/workspace/uwlab/scripts_v2"
@@ -86,12 +90,17 @@ docker_uwlab_run() {
 
     local env_name
     for env_name in \
-        CUDA_VISIBLE_DEVICES \
         DATASET_DIR \
         WANDB_API_KEY \
         WANDB_ENTITY \
         WANDB_MODE \
-        WANDB_PROJECT; do
+        WANDB_PROJECT \
+        WANDB_USERNAME \
+        WANDB_RUN_GROUP \
+        WANDB_TAGS \
+        WANDB_NOTES \
+        WANDB_RUN_ID \
+        WANDB_RESUME; do
         if [[ -n "${!env_name:-}" ]]; then
             docker_args+=(-e "${env_name}")
         fi
