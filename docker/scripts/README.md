@@ -31,8 +31,20 @@ Environment variables supported by every launcher:
 - `UWLAB_DRY_RUN=1`: print the fully quoted `docker run` command without
   starting it.
 
-`DATASET_DIR`, `WANDB_API_KEY`, `WANDB_ENTITY`, `WANDB_MODE`, and
-`WANDB_PROJECT` are forwarded when present in the host environment.
+W&B authentication should be supplied with `WANDB_API_KEY` (or through
+`UWLAB_ENV_FILE`). Host `wandb login` state is not mounted into the container.
+Common W&B settings, including `WANDB_ENTITY`, `WANDB_USERNAME`, `WANDB_MODE`,
+`WANDB_PROJECT`, `WANDB_RUN_GROUP`, `WANDB_TAGS`, `WANDB_NOTES`, `WANDB_RUN_ID`,
+and `WANDB_RESUME`, are forwarded when present in the host environment. W&B's
+local files are written below the host-mounted `logs/wandb` directory, so
+offline runs survive removal of the container.
+
+For RSL-RL launchers, use `--log_project_name` to reliably override the W&B
+project because the runner passes its configured project directly to
+`wandb.init`. The installed RSL-RL logger also reads `WANDB_USERNAME` as its
+explicit entity setting.
+
+`DATASET_DIR` is also forwarded when present in the host environment.
 
 On an eight-GPU machine, all eight GPUs are available inside the container.
 The existing scripts launch one Isaac Sim process and therefore normally use

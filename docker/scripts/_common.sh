@@ -42,6 +42,7 @@ docker_uwlab_run() {
         "${UWLAB_REPO_ROOT}/Datasets" \
         "${UWLAB_REPO_ROOT}/data_storage" \
         "${UWLAB_REPO_ROOT}/logs" \
+        "${UWLAB_REPO_ROOT}/logs/wandb" \
         "${UWLAB_REPO_ROOT}/outputs"
 
     local -a docker_args=(
@@ -61,6 +62,7 @@ docker_uwlab_run() {
         -e PYTHONUNBUFFERED=1
         -e UWLAB_PATH=/workspace/uwlab
         -e ISAACSIM_PATH=/isaac-sim
+        -e WANDB_DIR=/workspace/uwlab/logs/wandb
         --mount "type=bind,src=${UWLAB_REPO_ROOT}/source,dst=/workspace/uwlab/source"
         --mount "type=bind,src=${UWLAB_REPO_ROOT}/scripts,dst=/workspace/uwlab/scripts"
         --mount "type=bind,src=${UWLAB_REPO_ROOT}/scripts_v2,dst=/workspace/uwlab/scripts_v2"
@@ -91,7 +93,13 @@ docker_uwlab_run() {
         WANDB_API_KEY \
         WANDB_ENTITY \
         WANDB_MODE \
-        WANDB_PROJECT; do
+        WANDB_PROJECT \
+        WANDB_USERNAME \
+        WANDB_RUN_GROUP \
+        WANDB_TAGS \
+        WANDB_NOTES \
+        WANDB_RUN_ID \
+        WANDB_RESUME; do
         if [[ -n "${!env_name:-}" ]]; then
             docker_args+=(-e "${env_name}")
         fi
