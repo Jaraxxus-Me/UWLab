@@ -22,6 +22,7 @@ import omni.usd
 from isaaclab.assets import Articulation, RigidObject
 from isaaclab.controllers import DifferentialIKControllerCfg
 from isaaclab.envs import ManagerBasedEnv
+from isaaclab.envs.mdp.events import randomize_rigid_body_material as IsaacLabRandomizeRigidBodyMaterial
 from isaaclab.envs.mdp.actions.task_space_actions import DifferentialInverseKinematicsAction
 from isaaclab.managers import EventTermCfg, ManagerTermBase, SceneEntityCfg
 from isaaclab.markers import VisualizationMarkers
@@ -35,6 +36,34 @@ from uwlab_tasks.manager_based.manipulation.omnireset.mdp import utils
 from ..assembly_keypoints import Offset
 from .collision_analyzer_cfg import CollisionAnalyzerCfg
 from .success_monitor_cfg import SuccessMonitorCfg
+
+
+class randomize_rigid_body_material(IsaacLabRandomizeRigidBodyMaterial):
+    """Isaac Lab material randomization that permits visual-only rigid objects."""
+
+    def __call__(
+        self,
+        env: ManagerBasedEnv,
+        env_ids: torch.Tensor | None,
+        static_friction_range: tuple[float, float],
+        dynamic_friction_range: tuple[float, float],
+        restitution_range: tuple[float, float],
+        num_buckets: int,
+        asset_cfg: SceneEntityCfg,
+        make_consistent: bool = False,
+    ) -> None:
+        if self.asset.root_physx_view.max_shapes == 0:
+            return
+        super().__call__(
+            env,
+            env_ids,
+            static_friction_range,
+            dynamic_friction_range,
+            restitution_range,
+            num_buckets,
+            asset_cfg,
+            make_consistent,
+        )
 
 
 def scene_matches_reset_profiles(env: ManagerBasedEnv, profiles: dict[str, str] | None) -> bool:

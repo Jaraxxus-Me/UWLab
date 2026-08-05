@@ -28,6 +28,7 @@ BLOCK_USD = custom_cloud_path(
     f"{UWLAB_ASSETS_EXT_DIR}/uwlab_assets/cornered_block/block/block.usd",
 )
 BLOCK_PHYSCODER_USD = "https://huggingface.co/datasets/bowenli1024/physcoder_usd/resolve/main/objects/single_ur_scene/block/block.usd"
+RESYNC_ASSET_DIR = "https://huggingface.co/datasets/bowenli1024/physcoder_usd/resolve/main/objects/single_ur_scene"
 
 
 @configclass
@@ -197,6 +198,7 @@ variants = {
         "rectangle": make_object(f"{UWLAB_CLOUD_ASSETS_DIR}/Props/Custom/Rectangle/rectangle.usd"),
         "block": make_object(BLOCK_USD),
         "block_physcoder": make_object(BLOCK_PHYSCODER_USD),
+        "cube_resync": make_object(f"{RESYNC_ASSET_DIR}/cube_resync/cube_resync.usd"),
     }
 }
 

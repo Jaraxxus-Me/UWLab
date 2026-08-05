@@ -39,7 +39,22 @@ class CollisionAnalyzer:
     def __init__(self, cfg: CollisionAnalyzerCfg, env: ManagerBasedRLEnv):
         self.cfg = cfg
         self.asset: RigidObject = env.scene[cfg.asset_cfg.name]
-        self.obstacles: list[RigidObject] = [env.scene[cfg.name] for cfg in cfg.obstacle_cfgs]
+        self.obstacles: list[RigidObject] = []
+        for obstacle_cfg in cfg.obstacle_cfgs:
+            obstacle = env.scene[obstacle_cfg.name]
+            template_path = obstacle.cfg.prim_path.replace(".*", "0", 1)
+            colliders = get_all_matching_child_prims(
+                template_path,
+                predicate=lambda prim: prim.HasAPI(UsdPhysics.CollisionAPI),
+                traverse_instance_prims=True,
+            )
+            if colliders:
+                self.obstacles.append(obstacle)
+
+        # Collisionless assets are visual-only obstacles and therefore require
+        # no signed-distance queries.
+        if not self.obstacles:
+            return
         # we support passing in a Articulation(joint connected rigidbodies) as asset, but that requires we collect all
         # body names user intended to generate collision checks
         if cfg.asset_cfg.body_names is None:
@@ -196,6 +211,8 @@ class CollisionAnalyzer:
         return local_points.unsqueeze(0).expand(env.num_envs, -1, -1).contiguous()
 
     def __call__(self, env: ManagerBasedRLEnv, env_ids: torch.Tensor):
+        if not self.obstacles:
+            return torch.ones(len(env_ids), dtype=torch.bool, device=env.device)
         pos_w = (
             self.asset.data.body_link_pos_w[env_ids][:, self.body_ids]
             .unsqueeze(2)

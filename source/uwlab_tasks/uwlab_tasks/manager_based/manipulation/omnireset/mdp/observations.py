@@ -152,6 +152,10 @@ def get_material_properties(
     asset_cfg: SceneEntityCfg,
 ):
     asset: RigidObject | Articulation = env.scene[asset_cfg.name]
+    if asset.root_physx_view.max_shapes == 0:
+        # Preserve the usual one-shape (static friction, dynamic friction,
+        # restitution) observation width for collisionless visual markers.
+        return torch.zeros((env.num_envs, 3), dtype=torch.float32, device=env.device)
     mat = asset.root_physx_view.get_material_properties()
     if asset_cfg.body_ids is not None and not isinstance(asset_cfg.body_ids, slice):
         mat = mat[:, asset_cfg.body_ids]

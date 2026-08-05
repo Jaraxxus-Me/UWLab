@@ -26,6 +26,7 @@ CORNERED_BLOCK_ASSET_DIR = custom_cloud_path(
     f"{UWLAB_ASSETS_EXT_DIR}/uwlab_assets/cornered_block",
 )
 CORNERED_BLOCK_PHYSCODER_ASSET_DIR = "https://huggingface.co/datasets/bowenli1024/physcoder_usd/resolve/main/objects/single_ur_scene"
+RESYNC_ASSET_DIR = CORNERED_BLOCK_PHYSCODER_ASSET_DIR
 
 
 @configclass
@@ -241,7 +242,8 @@ variants = {
         "cube": make_insertive_object(f"{UWLAB_CLOUD_ASSETS_DIR}/Props/Custom/InsertiveCube/insertive_cube.usd"),
         "rectangle": make_insertive_object(f"{UWLAB_CLOUD_ASSETS_DIR}/Props/Custom/Rectangle/rectangle.usd"),
         "block": make_insertive_object(f"{CORNERED_BLOCK_ASSET_DIR}/block/block.usd"),
-        "block_physcoder": make_insertive_object(f"{CORNERED_BLOCK_PHYSCODER_ASSET_DIR}/block/block.usd")
+        "block_physcoder": make_insertive_object(f"{CORNERED_BLOCK_PHYSCODER_ASSET_DIR}/block/block.usd"),
+        "cube_resync": make_insertive_object(f"{RESYNC_ASSET_DIR}/cube_resync/cube_resync.usd"),
     },
     "scene.receptive_object": {
         "fbtabletop": make_receptive_object(
@@ -256,6 +258,7 @@ variants = {
         "wall": make_receptive_object(f"{UWLAB_CLOUD_ASSETS_DIR}/Props/Custom/Wall/wall.usd"),
         "box": make_receptive_object(f"{CORNERED_BLOCK_ASSET_DIR}/box/box.usd"),
         "box_physcoder": make_receptive_object(f"{CORNERED_BLOCK_PHYSCODER_ASSET_DIR}/box/box.usd"),
+        "region_resync": make_receptive_object(f"{RESYNC_ASSET_DIR}/region_resync/region_resync.usd"),
     },
 }
 

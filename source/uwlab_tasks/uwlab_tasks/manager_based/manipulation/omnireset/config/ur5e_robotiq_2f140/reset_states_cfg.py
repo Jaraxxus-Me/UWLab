@@ -28,6 +28,7 @@ from uwlab_tasks.manager_based.manipulation.omnireset.config.ur5e_robotiq_2f140.
 from ... import mdp as task_mdp
 
 CORNERED_BLOCK_ASSET_DIR = "https://huggingface.co/datasets/bowenli1024/physcoder_usd/resolve/main/objects/single_ur_scene"
+RESYNC_ASSET_DIR = CORNERED_BLOCK_ASSET_DIR
 OMNIRESET_2F140_DATASET_DIR = "./Datasets/OmniResetRealWorkspace"
 PHYSCODER_RESET_PROFILE = "physcoder_box_block"
 
@@ -591,6 +592,7 @@ variants = {
         "block_physcoder": make_insertive_object(
             f"{CORNERED_BLOCK_ASSET_DIR}/block/block.usd", reset_profile=PHYSCODER_RESET_PROFILE
         ),
+        "cube_resync": make_insertive_object(f"{RESYNC_ASSET_DIR}/cube_resync/cube_resync.usd"),
     },
     "scene.receptive_object": {
         "fbtabletop": make_receptive_object(
@@ -607,6 +609,7 @@ variants = {
         "box_physcoder": make_receptive_object(
             f"{CORNERED_BLOCK_ASSET_DIR}/box/box.usd", reset_profile=PHYSCODER_RESET_PROFILE
         ),
+        "region_resync": make_receptive_object(f"{RESYNC_ASSET_DIR}/region_resync/region_resync.usd"),
     },
 }
 
