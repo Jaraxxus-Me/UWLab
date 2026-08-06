@@ -1,20 +1,20 @@
 DATASET_DIR=${DATASET_DIR:-./Datasets/ReSYNC_Rebuttal}
 
-# python scripts_v2/tools/record_partial_assemblies.py \
-#     --task OmniReset-UR5eRobotiq2f140-PartialAssemblies-v0 \
-#     --dataset_dir ${DATASET_DIR} \
-#     --num_envs 10 \
-#     --num_trajectories 10 \
-#     --headless \
-#     env.scene.insertive_object=cube_resync env.scene.receptive_object=region_resync
+python scripts_v2/tools/record_partial_assemblies.py \
+    --task OmniReset-UR5eRobotiq2f140-PartialAssemblies-v0 \
+    --dataset_dir ${DATASET_DIR} \
+    --num_envs 10 \
+    --num_trajectories 10 \
+    --headless \
+    env.scene.insertive_object=cube_resync env.scene.receptive_object=region_resync
 
-# python scripts_v2/tools/record_grasps.py \
-#     --task OmniReset-Robotiq2f140-GraspSampling-v0 \
-#     --dataset_dir ${DATASET_DIR} \
-#     --num_envs 8192 \
-#     --num_grasps 1000 \
-#     --headless \
-#     env.scene.object=cube_resync
+python scripts_v2/tools/record_grasps.py \
+    --task OmniReset-Robotiq2f140-GraspSampling-v0 \
+    --dataset_dir ${DATASET_DIR} \
+    --num_envs 8192 \
+    --num_grasps 1000 \
+    --headless \
+    env.scene.object=cube_resync
 
 # # # Object Anywhere, End-Effector Anywhere (Reaching)
 python scripts_v2/tools/record_reset_states.py \
@@ -44,7 +44,7 @@ python scripts_v2/tools/record_reset_states.py \
 python scripts_v2/tools/record_reset_states.py \
     --task OmniReset-UR5eRobotiq2f140-ObjectPartiallyAssembledEEGrasped-v0 \
     --dataset_dir ${DATASET_DIR} \
-    --num_envs 16384 --num_reset_states 5000 --headless \
+    --num_envs 16384 --num_reset_states 10000 --headless \
     env.scene.insertive_object=cube_resync env.scene.receptive_object=region_resync \
     env.events.reset_insertive_object_pose_from_partial_assembly_dataset.params.dataset_dir=${DATASET_DIR} \
     env.events.reset_end_effector_pose_from_grasp_dataset.params.dataset_dir=${DATASET_DIR}
