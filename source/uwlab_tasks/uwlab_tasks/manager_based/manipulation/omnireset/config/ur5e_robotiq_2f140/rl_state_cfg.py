@@ -760,6 +760,19 @@ def make_receptive_object(usd_path: str):
     )
 
 
+def make_plain_table():
+    return RigidObjectCfg(
+        prim_path="{ENV_REGEX_NS}/Table",
+        init_state=RigidObjectCfg.InitialStateCfg(pos=(-0.4, 0.0, -0.02), rot=(1.0, 0.0, 0.0, 0.0)),
+        spawn=sim_utils.UsdFileCfg(
+            usd_path=f"{ISAAC_NUCLEUS_DIR}/Props/Blocks/DexCube/dex_cube_instanceable.usd",
+            scale=(9.0, 12.0, 0.4),
+            rigid_props=sim_utils.RigidBodyPropertiesCfg(kinematic_enabled=True),
+            visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(0.55, 0.55, 0.55), roughness=0.8),
+        ),
+    )
+
+
 variants = {
     "scene.insertive_object": {
         "fbleg": make_insertive_object(f"{UWLAB_CLOUD_ASSETS_DIR}/Props/FurnitureBench/SquareLeg/square_leg.usd"),
@@ -784,6 +797,9 @@ variants = {
         "cube": make_receptive_object(f"{UWLAB_CLOUD_ASSETS_DIR}/Props/Custom/ReceptiveCube/receptive_cube.usd"),
         "wall": make_receptive_object(f"{UWLAB_CLOUD_ASSETS_DIR}/Props/Custom/Wall/wall.usd"),
         "box": make_receptive_object(f"{CORNERED_BLOCK_ASSET_DIR}/box/box.usd"),
+    },
+    "scene.table": {
+        "plain": make_plain_table(),
     },
 }
 

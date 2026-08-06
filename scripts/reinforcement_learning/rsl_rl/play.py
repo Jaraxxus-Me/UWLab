@@ -150,7 +150,20 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
         runner = DistillationRunner(env, agent_cfg.to_dict(), log_dir=None, device=agent_cfg.device)
     else:
         raise ValueError(f"Unsupported runner class: {agent_cfg.class_name}")
-    runner.load(resume_path)
+    try:
+        runner.load(resume_path)
+    except RuntimeError as exc:
+        if "size mismatch for critic" not in str(exc):
+            raise
+        print("[INFO]: Checkpoint critic shape differs from current env; loading actor-compatible weights only.")
+        loaded_dict = torch.load(resume_path, weights_only=False, map_location=agent_cfg.device)
+        current_state = runner.alg.policy.state_dict()
+        compatible_state = {
+            key: value
+            for key, value in loaded_dict["model_state_dict"].items()
+            if key in current_state and current_state[key].shape == value.shape
+        }
+        runner.alg.policy.load_state_dict(compatible_state, strict=False)
 
     # obtain the trained policy for inference
     policy = runner.get_inference_policy(device=env.unwrapped.device)
