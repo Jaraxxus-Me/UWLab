@@ -6,6 +6,7 @@ checkout, for example:
 
 ```bash
 ./docker/scripts/train_from_scratch.sh
+./docker/scripts/play_cube_resync.sh
 ./docker/scripts/tools/collect_resets_box_block.sh
 ```
 
@@ -51,3 +52,8 @@ explicit entity setting.
 The `train_from_scratch.sh` launcher explicitly starts four distributed
 processes on GPUs 0--3. Other launchers use the selected GPU set but do not
 enable distributed execution implicitly.
+
+`play_cube_resync.sh` is a GUI launcher for the ReSYNC cube policy. It uses GPU
+0 by default, forwards the host X11 display with a temporary authorization
+cookie, and runs four vectorized environments with ObjectAnywhereEEAnywhere
+resets. It requires `DISPLAY`, `/tmp/.X11-unix`, and the host `xauth` command.

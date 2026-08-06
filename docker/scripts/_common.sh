@@ -20,6 +20,7 @@ docker_uwlab_run() {
     local container_name="${UWLAB_CONTAINER_NAME:-uwlab-$(basename "${repo_script}" .sh)-$$}"
     local container_script="/workspace/uwlab/${repo_script}"
     local host_script="${UWLAB_REPO_ROOT}/${repo_script}"
+    local xauth_tmp=""
 
     if ! command -v docker >/dev/null 2>&1; then
         echo "Docker is required but was not found in PATH." >&2
@@ -88,6 +89,38 @@ docker_uwlab_run() {
         docker_args+=(-it)
     fi
 
+    if [[ "${UWLAB_ENABLE_X11:-0}" == "1" ]]; then
+        if [[ -z "${DISPLAY:-}" ]]; then
+            echo "UWLAB_ENABLE_X11=1 requires DISPLAY to be set on the host." >&2
+            return 2
+        fi
+        if [[ ! -d /tmp/.X11-unix ]]; then
+            echo "UWLAB_ENABLE_X11=1 requires the host X11 socket directory /tmp/.X11-unix." >&2
+            return 2
+        fi
+        if ! command -v xauth >/dev/null 2>&1; then
+            echo "UWLAB_ENABLE_X11=1 requires the host 'xauth' command." >&2
+            return 127
+        fi
+
+        xauth_tmp="$(mktemp /tmp/uwlab-docker-xauth.XXXXXX)"
+        # Make the current display cookie usable from the container's hostname.
+        xauth nlist "${DISPLAY}" | sed -e 's/^..../ffff/' | xauth -f "${xauth_tmp}" nmerge -
+        if [[ ! -s "${xauth_tmp}" ]]; then
+            rm -f -- "${xauth_tmp}"
+            echo "Could not derive an X11 authorization cookie for DISPLAY=${DISPLAY}." >&2
+            return 2
+        fi
+        chmod 0644 "${xauth_tmp}"
+        docker_args+=(
+            -e "DISPLAY=${DISPLAY}"
+            -e QT_X11_NO_MITSHM=1
+            -e XAUTHORITY=/tmp/uwlab-docker.xauth
+            --mount "type=bind,src=/tmp/.X11-unix,dst=/tmp/.X11-unix,readonly"
+            --mount "type=bind,src=${xauth_tmp},dst=/tmp/uwlab-docker.xauth,readonly"
+        )
+    fi
+
     local env_name
     for env_name in \
         DATASET_DIR \
@@ -151,7 +184,21 @@ docker_uwlab_run() {
     if [[ "${UWLAB_DRY_RUN:-0}" == "1" ]]; then
         printf '%q ' docker "${docker_args[@]}"
         printf '\n'
+        if [[ -n "${xauth_tmp}" ]]; then
+            rm -f -- "${xauth_tmp}"
+        fi
         return 0
+    fi
+
+    if [[ -n "${xauth_tmp}" ]]; then
+        local docker_status
+        if docker "${docker_args[@]}"; then
+            docker_status=0
+        else
+            docker_status=$?
+        fi
+        rm -f -- "${xauth_tmp}"
+        return "${docker_status}"
     fi
 
     exec docker "${docker_args[@]}"
