@@ -803,6 +803,12 @@ class reset_end_effector_round_fixed_asset_or_physcoder_submdp(reset_end_effecto
         physcoder_block_cfg: SceneEntityCfg | None = None,
         physcoder_support_cfg: SceneEntityCfg | None = None,
         physcoder_standoff_range: tuple[float, float] = (0.416, 0.466),
+        gripper_cfg: SceneEntityCfg | None = None,
+        pregrasp_profiles: dict[str, str] | None = None,
+        pregrasp_xy_radius: float = 0.05,
+        pregrasp_height_range: tuple[float, float] = (0.25, 0.35),
+        pregrasp_max_angle: float = np.pi / 12.0,
+        pregrasp_max_attempts: int = 32,
     ) -> None:
         del (
             physcoder_profile,
@@ -810,6 +816,12 @@ class reset_end_effector_round_fixed_asset_or_physcoder_submdp(reset_end_effecto
             physcoder_block_cfg,
             physcoder_support_cfg,
             physcoder_standoff_range,
+            gripper_cfg,
+            pregrasp_profiles,
+            pregrasp_xy_radius,
+            pregrasp_height_range,
+            pregrasp_max_angle,
+            pregrasp_max_attempts,
         )
         if not self._physcoder_active:
             return super().__call__(

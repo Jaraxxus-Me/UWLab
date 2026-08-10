@@ -244,6 +244,12 @@ class ObjectAnywhereEEAnywhereEventCfg(ResetStatesBaseEventCfg):
             "robot_ik_cfg": SceneEntityCfg(
                 "robot", joint_names=["shoulder.*", "elbow.*", "wrist.*"], body_names="robotiq_base_link"
             ),
+            "gripper_cfg": SceneEntityCfg("robot", joint_names=["finger_joint", ".*right.*", ".*left.*"]),
+            "pregrasp_profiles": None,
+            "pregrasp_xy_radius": 0.05,
+            "pregrasp_height_range": (0.25, 0.35),
+            "pregrasp_max_angle": np.pi / 12,
+            "pregrasp_max_attempts": 32,
             "physcoder_profile": PHYSCODER_RESET_PROFILE,
             "physcoder_box_cfg": SceneEntityCfg("receptive_object"),
             "physcoder_block_cfg": SceneEntityCfg("insertive_object"),
