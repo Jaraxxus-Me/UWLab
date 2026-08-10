@@ -237,6 +237,7 @@ class check_reset_state_success(ManagerTermBase):
         self.max_object_pos_deviation = cfg.params.get("max_object_pos_deviation")
         self.pos_z_threshold = cfg.params.get("pos_z_threshold")
         self.consecutive_stability_steps = cfg.params.get("consecutive_stability_steps", 5)
+        self.debug_rejections = cfg.params.get("debug_rejections", False)
 
         # Load gripper_approach_direction from metadata
         robot_asset = env.scene[self.robot_cfg.name]
@@ -328,7 +329,9 @@ class check_reset_state_success(ManagerTermBase):
         receptive_asset_cfg: SceneEntityCfg | None = None,
         assembly_success_prob: float | None = None,
         assembly_threshold_scale: float = 1.0,
+        debug_rejections: bool = False,
     ) -> torch.Tensor:
+        del debug_rejections
 
         # Check time out
         time_out = env.episode_length_buf >= env.max_episode_length
@@ -393,22 +396,46 @@ class check_reset_state_success(ManagerTermBase):
             # Asset is above ground if position is greater than z threshold
             pos_below_threshold |= asset_pos[:, 2] < self.pos_z_threshold
 
-        # Check for collisions between gripper and object
-        all_env_ids = torch.arange(env.num_envs, device=env.device)
-        collision_free = torch.all(
-            torch.stack([collision_analyzer(env, all_env_ids) for collision_analyzer in self.collision_analyzers]),
-            dim=0,
-        )
-
-        reset_success = (
+        # Collision analysis dominates both runtime and peak memory.  Since a
+        # reset may only succeed at timeout, first discard ineligible states
+        # and evaluate the point clouds only for the remaining candidates.
+        # Chunking keeps the 8192-env collection configuration below the GPU
+        # memory limit without changing the collision result.
+        reset_candidate = (
             (~abnormal_gripper_state)
             & gripper_orientation_within_range
             & stability_reached
             & (~excessive_pose_deviation)
             & (~pos_below_threshold)
-            & collision_free
             & time_out
         )
+        collision_free = torch.zeros(env.num_envs, device=env.device, dtype=torch.bool)
+        candidate_ids = torch.where(reset_candidate)[0]
+        for chunk_ids in candidate_ids.split(512):
+            chunk_collision_free = torch.all(
+                torch.stack(
+                    [collision_analyzer(env, chunk_ids) for collision_analyzer in self.collision_analyzers]
+                ),
+                dim=0,
+            )
+            collision_free[chunk_ids] = chunk_collision_free
+
+        reset_success = reset_candidate & collision_free
+
+        if self.debug_rejections and bool(time_out.any()):
+            print(
+                "Reset rejection counts:",
+                {
+                    "total": int(time_out.sum()),
+                    "normal_gripper": int((time_out & ~abnormal_gripper_state).sum()),
+                    "orientation": int((time_out & gripper_orientation_within_range).sum()),
+                    "stable": int((time_out & stability_reached).sum()),
+                    "pose_deviation": int((time_out & ~excessive_pose_deviation).sum()),
+                    "above_ground": int((time_out & ~pos_below_threshold).sum()),
+                    "pre_collision": int(reset_candidate.sum()),
+                    "collision_free": int(reset_success.sum()),
+                },
+            )
 
         if self.assembly_success_prob is not None:
             ins_pos_w, ins_quat_w = self.insertive_asset_offset.apply(self.insertive_asset)

@@ -248,6 +248,8 @@ class ObjectAnywhereEEAnywhereEventCfg(ResetStatesBaseEventCfg):
             "physcoder_box_cfg": SceneEntityCfg("receptive_object"),
             "physcoder_block_cfg": SceneEntityCfg("insertive_object"),
             "physcoder_support_cfg": SceneEntityCfg("ur5_metal_support"),
+            # Empirical one-shot collision-free boundary for 256-env batches.
+            "physcoder_standoff_range": (0.416, 0.466),
         },
     )
 
@@ -315,7 +317,7 @@ class ObjectRestingEEGraspedEventCfg(ResetStatesBaseEventCfg):
             "workspace_object_z_range": (0.025, 0.08),
             "workspace_object_maximum_tilt": np.pi / 6,
             "workspace_object_resample_interval": 64,
-            "workspace_collision_attempts": 128,
+            "workspace_collision_attempts": 512,
         },
     )
 
@@ -391,7 +393,7 @@ class ObjectAnywhereEEGraspedEventCfg(ResetStatesBaseEventCfg):
             "workspace_object_z_range": (0.025, 0.08),
             "workspace_object_maximum_tilt": np.pi / 6,
             "workspace_object_resample_interval": 64,
-            "workspace_collision_attempts": 128,
+            "workspace_collision_attempts": 512,
         },
     )
 
@@ -452,6 +454,16 @@ class ObjectPartiallyAssembledEEGraspedEventCfg(ResetStatesBaseEventCfg):
                 "z": (0.0, 0.0),
                 "roll": (0.0, 0.0),
                 "pitch": (0.0, 0.0),
+                "yaw": (0.0, 0.0),
+            },
+            "pose_override_profiles": {
+                "insertive_object": PHYSCODER_RESET_PROFILE,
+                "receptive_object": PHYSCODER_RESET_PROFILE,
+            },
+            "relative_position_offset_b": (0.0, 0.0, 0.158),
+            "relative_orientation_range_b": {
+                "roll": (-np.pi / 36, np.pi / 36),
+                "pitch": (-np.pi / 36, np.pi / 36),
                 "yaw": (0.0, 0.0),
             },
         },
@@ -520,6 +532,7 @@ class ResetStatesTerminationCfg:
             "max_object_pos_deviation": MISSING,
             "pos_z_threshold": -0.02,
             "consecutive_stability_steps": 5,
+            "debug_rejections": False,
         },
         time_out=True,
     )

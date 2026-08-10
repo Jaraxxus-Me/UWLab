@@ -722,8 +722,6 @@ class reset_end_effector_round_fixed_asset_or_physcoder_submdp(reset_end_effecto
         "left_inner_finger_pad_joint": 0.785398,
         "right_inner_finger_pad_joint": 0.785398,
     }
-    _STANDOFF_GRID = tuple(round(0.15 + index * 0.01, 2) for index in range(21))
-
     def __init__(self, cfg: EventTermCfg, env: ManagerBasedEnv):
         super().__init__(cfg, env)
         profile = cfg.params.get("physcoder_profile")
@@ -755,6 +753,7 @@ class reset_end_effector_round_fixed_asset_or_physcoder_submdp(reset_end_effecto
         self._physcoder_corner_signs = torch.tensor(
             self._CORNER_SIGNS, dtype=torch.float32, device=env.device
         )
+        self._physcoder_standoff_range = tuple(cfg.params.get("physcoder_standoff_range", (0.416, 0.466)))
 
         self._physcoder_arm_joint_ids = self.robot.find_joints(["shoulder.*", "elbow.*", "wrist.*"])[0]
         body_ids, _ = self.robot.find_bodies("wrist_3_link")
@@ -803,30 +802,41 @@ class reset_end_effector_round_fixed_asset_or_physcoder_submdp(reset_end_effecto
         physcoder_box_cfg: SceneEntityCfg | None = None,
         physcoder_block_cfg: SceneEntityCfg | None = None,
         physcoder_support_cfg: SceneEntityCfg | None = None,
+        physcoder_standoff_range: tuple[float, float] = (0.416, 0.466),
     ) -> None:
-        del physcoder_profile, physcoder_box_cfg, physcoder_block_cfg, physcoder_support_cfg
+        del (
+            physcoder_profile,
+            physcoder_box_cfg,
+            physcoder_block_cfg,
+            physcoder_support_cfg,
+            physcoder_standoff_range,
+        )
         if not self._physcoder_active:
             return super().__call__(
                 env, env_ids, fixed_asset_cfg, fixed_asset_offset, pose_range_b, robot_ik_cfg
             )
 
         pending_ids = env_ids.clone()
-        for _ in range(16):
+        # A fixed batch-wide failure budget must account for the number of
+        # independently sampled environments.  Sixteen attempts is adequate
+        # for small batches, but still leaves a few failures at 8192 envs and
+        # aborts the entire collection job.  Retrying only ``pending_ids`` is
+        # cheap as the set shrinks, so use a batch-safe cap here.
+        for _ in range(64):
             if pending_ids.numel() == 0:
                 break
             self._physcoder_reset_robot(env, pending_ids)
             self._physcoder_reset_box_block(env, pending_ids)
-            minimum = self._physcoder_minimum_standoff(env, pending_ids)
-            has_minimum = torch.isfinite(minimum)
-            candidate_ids = pending_ids[has_minimum]
-            candidate_minimum = minimum[has_minimum]
-            if candidate_ids.numel() == 0:
-                continue
-            standoff = candidate_minimum + 0.02
-            target_pos, target_quat = self._physcoder_sample_sphere(candidate_ids, standoff)
-            self._physcoder_place(env, candidate_ids, target_pos, target_quat)
-            accepted = self._physcoder_valid(env, candidate_ids, target_pos, require_box_bounds=True)
-            pending_ids = torch.cat((pending_ids[~has_minimum], candidate_ids[~accepted]))
+            standoff = math_utils.sample_uniform(
+                self._physcoder_standoff_range[0],
+                self._physcoder_standoff_range[1],
+                (len(pending_ids),),
+                device=env.device,
+            )
+            target_pos, target_quat = self._physcoder_sample_sphere(pending_ids, standoff)
+            self._physcoder_place(env, pending_ids, target_pos, target_quat)
+            accepted = self._physcoder_valid(env, pending_ids, target_pos, require_box_bounds=True)
+            pending_ids = pending_ids[~accepted]
 
         if pending_ids.numel() != 0:
             raise RuntimeError(
@@ -925,23 +935,6 @@ class reset_end_effector_round_fixed_asset_or_physcoder_submdp(reset_end_effecto
     ) -> None:
         self._physcoder_solve_ik(env, env_ids, target_pos, target_quat)
         self._physcoder_close_gripper(env, env_ids)
-
-    def _physcoder_minimum_standoff(self, env: ManagerBasedEnv, env_ids: torch.Tensor) -> torch.Tensor:
-        minimum = torch.full((len(env_ids),), torch.nan, dtype=torch.float32, device=env.device)
-        for distance in self._STANDOFF_GRID:
-            rows = torch.nonzero(torch.isnan(minimum), as_tuple=False).squeeze(-1)
-            if rows.numel() == 0:
-                break
-            active_ids = env_ids[rows]
-            target_pos = self._physcoder_block.data.root_pos_w[active_ids].clone()
-            target_pos[:, 2] += distance
-            target_quat = self._physcoder_pointing_quaternion(
-                target_pos, self._physcoder_block.data.root_pos_w[active_ids]
-            )
-            self._physcoder_place(env, active_ids, target_pos, target_quat)
-            valid = self._physcoder_valid(env, active_ids, target_pos, require_box_bounds=False)
-            minimum[rows[valid]] = distance
-        return minimum
 
     def _physcoder_sample_sphere(
         self, env_ids: torch.Tensor, standoff: torch.Tensor
@@ -1087,6 +1080,7 @@ class reset_end_effector_from_grasp_dataset(ManagerTermBase):
         pose_range_b: dict[str, tuple[float, float]] = cfg.params.get("pose_range_b", dict())
         range_list = [pose_range_b.get(key, (0.0, 0.0)) for key in ["x", "y", "z", "roll", "pitch", "yaw"]]
         self.ranges = torch.tensor(range_list, device=env.device)
+
         self.workspace_box_cfg: SceneEntityCfg | None = cfg.params.get("workspace_box_cfg")
         self.workspace_filter_active = bool(
             self.workspace_box_cfg is not None
@@ -1401,6 +1395,24 @@ class reset_insertive_object_from_partial_assembly_dataset(ManagerTermBase):
         range_list = [pose_range_b.get(key, (0.0, 0.0)) for key in ["x", "y", "z", "roll", "pitch", "yaw"]]
         self.ranges = torch.tensor(range_list, device=env.device)
 
+        # Some discovery datasets contain physically valid intermediate poses
+        # whose orientations or insertion depths are unsuitable for a grasped
+        # reset. Allow an explicitly tagged asset pair to retain the recorded
+        # positional variation while replacing orientation with a narrow,
+        # configurable distribution.
+        self.pose_override_active = scene_matches_reset_profiles(env, cfg.params.get("pose_override_profiles"))
+        self.relative_position_offset_b = torch.tensor(
+            cfg.params.get("relative_position_offset_b", (0.0, 0.0, 0.0)),
+            dtype=torch.float32,
+            device=env.device,
+        )
+        orientation_range_b = cfg.params.get("relative_orientation_range_b", {})
+        self.relative_orientation_ranges = torch.tensor(
+            [orientation_range_b.get(key, (0.0, 0.0)) for key in ("roll", "pitch", "yaw")],
+            dtype=torch.float32,
+            device=env.device,
+        )
+
         # Compute partial assembly dataset path from object pair names
         self.partial_assembly_dataset_path = self._compute_partial_assembly_dataset_path()
 
@@ -1446,8 +1458,12 @@ class reset_insertive_object_from_partial_assembly_dataset(ManagerTermBase):
         insertive_object_cfg: SceneEntityCfg,
         receptive_object_cfg: SceneEntityCfg,
         pose_range_b: dict[str, tuple[float, float]] = dict(),
+        pose_override_profiles: dict[str, str] | None = None,
+        relative_position_offset_b: tuple[float, float, float] = (0.0, 0.0, 0.0),
+        relative_orientation_range_b: dict[str, tuple[float, float]] = dict(),
     ) -> None:
         """Reset the insertive object from a partial assembly dataset."""
+        del pose_override_profiles, relative_position_offset_b, relative_orientation_range_b
         # Get receptive object pose (world coordinates)
         receptive_pos_w = self.receptive_object.data.root_pos_w[env_ids]
         receptive_quat_w = self.receptive_object.data.root_quat_w[env_ids]
@@ -1459,6 +1475,18 @@ class reset_insertive_object_from_partial_assembly_dataset(ManagerTermBase):
         # Use pre-computed tensors for sampled partial assemblies
         sampled_rel_positions = self.rel_positions[assembly_indices]
         sampled_rel_quaternions = self.rel_quaternions[assembly_indices]
+
+        if self.pose_override_active:
+            sampled_rel_positions = sampled_rel_positions + self.relative_position_offset_b
+            orientation_samples = math_utils.sample_uniform(
+                self.relative_orientation_ranges[:, 0],
+                self.relative_orientation_ranges[:, 1],
+                (num_envs, 3),
+                device=env.device,
+            )
+            sampled_rel_quaternions = math_utils.quat_from_euler_xyz(
+                orientation_samples[:, 0], orientation_samples[:, 1], orientation_samples[:, 2]
+            )
 
         # Vectorized transform to world coordinates: T_insertive_world = T_receptive_world * T_relative
         insertive_pos_w, insertive_quat_w = math_utils.combine_frame_transforms(
