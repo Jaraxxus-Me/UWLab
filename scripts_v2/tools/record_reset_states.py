@@ -38,6 +38,23 @@ parser.add_argument(
 parser.add_argument(
     "--num_reset_states", type=int, default=100, help="Number of reset states to record. Set to 0 for infinite."
 )
+parser.add_argument(
+    "--num_reset_conditions",
+    type=int,
+    default=None,
+    help="Stop after evaluating this many reset candidates, regardless of how many succeed.",
+)
+parser.add_argument(
+    "--report_initial_collisions",
+    action="store_true",
+    help="Report collision-free rates immediately after reset, before stepping physics.",
+)
+parser.add_argument(
+    "--initial_collision_batches",
+    type=int,
+    default=1,
+    help="Number of freshly sampled batches to aggregate for --report_initial_collisions.",
+)
 
 AppLauncher.add_app_launcher_args(parser)
 args_cli, remaining_args = parser.parse_known_args()
@@ -120,6 +137,24 @@ def main(env_cfg, agent_cfg) -> None:
     env = cast(ManagerBasedRLEnv, gym.make(args_cli.task, cfg=env_cfg)).unwrapped
     env.reset()
 
+    if args_cli.report_initial_collisions:
+        success_term = env.termination_manager.get_term_cfg("success").func
+        all_env_ids = torch.arange(env.num_envs, device=env.device)
+        collision_labels = ["robot-object", "robot-receptive", "object-receptive"]
+        collision_free_counts = torch.zeros(len(collision_labels), dtype=torch.long)
+        for batch_index in range(args_cli.initial_collision_batches):
+            if batch_index > 0:
+                env.reset()
+            for analyzer_index, collision_analyzer in enumerate(success_term.collision_analyzers):
+                collision_free_counts[analyzer_index] += collision_analyzer(env, all_env_ids).sum().cpu()
+        total_initial_states = env.num_envs * args_cli.initial_collision_batches
+        print(f"Initial collision-free rates ({total_initial_states} states):")
+        for label, collision_free_count in zip(collision_labels, collision_free_counts, strict=True):
+            print(
+                f"  {label}: {int(collision_free_count)}/{total_initial_states} "
+                f"({collision_free_count.item() / total_initial_states:.2%})"
+            )
+
     # Run reset state sampling
     num_reset_conditions_evaluated = 0
     current_successful_reset_conditions = 0
@@ -132,12 +167,23 @@ def main(env_cfg, agent_cfg) -> None:
             torch.randint(0, 2, (env.num_envs,), device=env.device, dtype=torch.float32) * 2 - 1
         )  # Randomly choose between -1 and 1
 
-    # Create progress bar
-    pbar = tqdm(total=args_cli.num_reset_states, desc="Successful reset states", unit="reset states")
+    # Create progress bar. A fixed evaluation budget is useful for measuring
+    # comparable success rates without waiting for a low-rate reset type to
+    # accumulate an arbitrary number of successful states.
+    fixed_evaluation_budget = args_cli.num_reset_conditions is not None
+    pbar = tqdm(
+        total=args_cli.num_reset_conditions if fixed_evaluation_budget else args_cli.num_reset_states,
+        desc="Evaluated reset conditions" if fixed_evaluation_budget else "Successful reset states",
+        unit="reset conditions" if fixed_evaluation_budget else "reset states",
+    )
 
     start_time = time.time()
 
-    while current_successful_reset_conditions < args_cli.num_reset_states:
+    while (
+        num_reset_conditions_evaluated < args_cli.num_reset_conditions
+        if fixed_evaluation_budget
+        else current_successful_reset_conditions < args_cli.num_reset_states
+    ):
         # Step environment (this will evaluate grasps in parallel across environments)
         _, _, terminated, truncated, _ = env.step(actions)
         dones = terminated | truncated
@@ -154,10 +200,14 @@ def main(env_cfg, agent_cfg) -> None:
         if new_successful_count > current_successful_reset_conditions:
             increment = new_successful_count - current_successful_reset_conditions
             current_successful_reset_conditions = new_successful_count
-            pbar.update(increment)
+            if not fixed_evaluation_budget:
+                pbar.update(increment)
 
         # Count total reset conditions evaluated (sum across all environments)
-        num_reset_conditions_evaluated += dones.sum().item()
+        evaluated_increment = dones.sum().item()
+        num_reset_conditions_evaluated += evaluated_increment
+        if fixed_evaluation_budget:
+            pbar.update(evaluated_increment)
 
         if env.sim.is_stopped():
             break
