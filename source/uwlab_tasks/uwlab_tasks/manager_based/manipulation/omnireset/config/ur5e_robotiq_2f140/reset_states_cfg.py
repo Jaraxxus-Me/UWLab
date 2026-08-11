@@ -201,9 +201,9 @@ class ObjectAnywhereEEAnywhereEventCfg(ResetStatesBaseEventCfg):
                 # x, y are overridden by xy_annulus_range below.
                 "x": (0.0, 0.0),
                 "y": (0.0, 0.0),
-                "z": (0.0, 0.01),
-                "roll": (0.0, 0.0),
-                "pitch": (0.0, 0.0),
+                "z": (0.0, 0.3),
+                "roll": (-np.pi, np.pi),
+                "pitch": (-np.pi, np.pi),
                 "yaw": (-np.pi, np.pi),
             },
             "velocity_range": {},
@@ -219,15 +219,15 @@ class ObjectAnywhereEEAnywhereEventCfg(ResetStatesBaseEventCfg):
         func=task_mdp.reset_end_effector_round_fixed_asset,
         mode="reset",
         params={
-            "fixed_asset_cfg": SceneEntityCfg("insertive_object"),
+            "fixed_asset_cfg": SceneEntityCfg("receptive_object"),
             "fixed_asset_offset": None,
             "pose_range_b": {
-                "x": (-0.03, 0.03),
-                "y": (-0.03, 0.03),
-                "z": (0.22, 0.3),
-                "roll": (-np.pi / 16, np.pi / 16),
-                "pitch": (15 * np.pi / 16, 17 * np.pi / 16),
-                "yaw": (-np.pi, np.pi),
+                "x": (-0.16, 0.16),
+                "y": (-0.16, 0.16),
+                "z": (0.0, 0.5),
+                "roll": (0.0, 0.0),
+                "pitch": (np.pi / 4, 3 * np.pi / 4),
+                "yaw": (-np.pi / 2, np.pi / 2),
             },
             "robot_ik_cfg": SceneEntityCfg(
                 "robot", joint_names=["shoulder.*", "elbow.*", "wrist.*"], body_names="robotiq_base_link"
@@ -603,6 +603,7 @@ class ObjectPartiallyAssembledEEAnywhereResetStatesCfg(UR5eRobotiq2f140ResetStat
         self.terminations.success.params["receptive_asset_cfg"] = SceneEntityCfg("receptive_object")
         self.terminations.success.params["assembly_success_prob"] = 0.5
         self.terminations.success.params["assembly_threshold_scale"] = 1.5
+
 
 @configclass
 class ObjectPartiallyAssembledEEGraspedResetStatesCfg(UR5eRobotiq2f140ResetStatesCfg):
