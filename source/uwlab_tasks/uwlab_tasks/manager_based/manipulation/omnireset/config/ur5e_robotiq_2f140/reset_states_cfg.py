@@ -29,14 +29,6 @@ from ... import mdp as task_mdp
 
 CORNERED_BLOCK_ASSET_DIR = "https://huggingface.co/datasets/bowenli1024/physcoder_usd/resolve/main/objects/single_ur_scene"
 OMNIRESET_2F140_DATASET_DIR = "./Datasets/OmniResetRealWorkspace"
-PHYSCODER_RESET_PROFILE = "physcoder_box_block"
-
-
-@configclass
-class ResetProfileRigidObjectCfg(RigidObjectCfg):
-    """Rigid-object configuration carrying reset-policy selection metadata."""
-
-    reset_profile: str = "default"
 
 
 @configclass
@@ -195,10 +187,6 @@ class ResetStatesBaseEventCfg:
             "asset_cfgs": {"receptive_object": SceneEntityCfg("receptive_object")},
             "offset_asset_cfg": SceneEntityCfg("ur5_metal_support"),
             "use_bottom_offset": True,
-            "offset_use_current_pose_profiles": {
-                "insertive_object": PHYSCODER_RESET_PROFILE,
-                "receptive_object": PHYSCODER_RESET_PROFILE,
-            },
         },
     )
 
@@ -228,7 +216,7 @@ class ObjectAnywhereEEAnywhereEventCfg(ResetStatesBaseEventCfg):
     )
 
     reset_end_effector_pose = EventTerm(
-        func=task_mdp.reset_end_effector_round_fixed_asset_or_physcoder_submdp,
+        func=task_mdp.reset_end_effector_round_fixed_asset,
         mode="reset",
         params={
             "fixed_asset_cfg": SceneEntityCfg("insertive_object"),
@@ -244,18 +232,6 @@ class ObjectAnywhereEEAnywhereEventCfg(ResetStatesBaseEventCfg):
             "robot_ik_cfg": SceneEntityCfg(
                 "robot", joint_names=["shoulder.*", "elbow.*", "wrist.*"], body_names="robotiq_base_link"
             ),
-            "gripper_cfg": SceneEntityCfg("robot", joint_names=["finger_joint", ".*right.*", ".*left.*"]),
-            "pregrasp_profiles": None,
-            "pregrasp_xy_radius": 0.05,
-            "pregrasp_height_range": (0.25, 0.35),
-            "pregrasp_max_angle": np.pi / 12,
-            "pregrasp_max_attempts": 32,
-            "physcoder_profile": PHYSCODER_RESET_PROFILE,
-            "physcoder_box_cfg": SceneEntityCfg("receptive_object"),
-            "physcoder_block_cfg": SceneEntityCfg("insertive_object"),
-            "physcoder_support_cfg": SceneEntityCfg("ur5_metal_support"),
-            # Empirical one-shot collision-free boundary for 256-env batches.
-            "physcoder_standoff_range": (0.416, 0.466),
         },
     )
 
@@ -263,32 +239,12 @@ class ObjectAnywhereEEAnywhereEventCfg(ResetStatesBaseEventCfg):
 @configclass
 class ObjectRestingEEGraspedEventCfg(ResetStatesBaseEventCfg):
     reset_insertive_object_pose_from_reset_states = EventTerm(
-        func=task_mdp.MultiResetManagerUnlessProfiles,
+        func=task_mdp.MultiResetManager,
         mode="reset",
         params={
             "dataset_dir": OMNIRESET_2F140_DATASET_DIR,
             "reset_types": ["ObjectAnywhereEEAnywhere"],
             "probs": [1.0],
-            "skip_profiles": {
-                "insertive_object": PHYSCODER_RESET_PROFILE,
-                "receptive_object": PHYSCODER_RESET_PROFILE,
-            },
-        },
-    )
-
-    reset_insertive_object_pose_in_box = EventTerm(
-        func=task_mdp.reset_object_pose_in_box,
-        mode="reset",
-        params={
-            "object_cfg": SceneEntityCfg("insertive_object"),
-            "box_cfg": SceneEntityCfg("receptive_object"),
-            "profiles": {
-                "insertive_object": PHYSCODER_RESET_PROFILE,
-                "receptive_object": PHYSCODER_RESET_PROFILE,
-            },
-            "xy_half_extent": 0.09,
-            "relative_z_range": (0.025, 0.08),
-            "maximum_tilt": np.pi / 6,
         },
     )
 
@@ -303,27 +259,13 @@ class ObjectRestingEEGraspedEventCfg(ResetStatesBaseEventCfg):
             ),
             "gripper_cfg": SceneEntityCfg("robot", joint_names=["finger_joint", ".*right.*", ".*left.*"]),
             "pose_range_b": {
-                "x": (0.0, 0.0),
-                "y": (0.0, 0.0),
-                "z": (0.0, 0.0),
-                "roll": (0.0, 0.0),
-                "pitch": (0.0, 0.0),
-                "yaw": (0.0, 0.0),
+                "x": (-0.02, 0.02),
+                "y": (-0.02, 0.02),
+                "z": (-0.02, 0.02),
+                "roll": (-np.pi / 16, np.pi / 16),
+                "pitch": (-np.pi / 16, np.pi / 16),
+                "yaw": (-np.pi / 16, np.pi / 16),
             },
-            "workspace_box_cfg": SceneEntityCfg("receptive_object"),
-            "workspace_profiles": {
-                "insertive_object": PHYSCODER_RESET_PROFILE,
-                "receptive_object": PHYSCODER_RESET_PROFILE,
-            },
-            "workspace_xy_half_extent": 0.09,
-            "workspace_relative_z_range": (0.0, 0.37),
-            "workspace_standoff_range": (0.17, 0.37),
-            "workspace_resample_object": True,
-            "workspace_object_xy_half_extent": 0.09,
-            "workspace_object_z_range": (0.025, 0.08),
-            "workspace_object_maximum_tilt": np.pi / 6,
-            "workspace_object_resample_interval": 64,
-            "workspace_collision_attempts": 512,
         },
     )
 
@@ -352,22 +294,6 @@ class ObjectAnywhereEEGraspedEventCfg(ResetStatesBaseEventCfg):
         },
     )
 
-    reset_insertive_object_pose_in_box = EventTerm(
-        func=task_mdp.reset_object_pose_in_box,
-        mode="reset",
-        params={
-            "object_cfg": SceneEntityCfg("insertive_object"),
-            "box_cfg": SceneEntityCfg("receptive_object"),
-            "profiles": {
-                "insertive_object": PHYSCODER_RESET_PROFILE,
-                "receptive_object": PHYSCODER_RESET_PROFILE,
-            },
-            "xy_half_extent": 0.09,
-            "relative_z_range": (0.025, 0.08),
-            "maximum_tilt": np.pi / 6,
-        },
-    )
-
     reset_end_effector_pose_from_grasp_dataset = EventTerm(
         func=task_mdp.reset_end_effector_from_grasp_dataset,
         mode="reset",
@@ -386,20 +312,6 @@ class ObjectAnywhereEEGraspedEventCfg(ResetStatesBaseEventCfg):
                 "pitch": (0.0, 0.0),
                 "yaw": (0.0, 0.0),
             },
-            "workspace_box_cfg": SceneEntityCfg("receptive_object"),
-            "workspace_profiles": {
-                "insertive_object": PHYSCODER_RESET_PROFILE,
-                "receptive_object": PHYSCODER_RESET_PROFILE,
-            },
-            "workspace_xy_half_extent": 0.09,
-            "workspace_relative_z_range": (0.0, 0.37),
-            "workspace_standoff_range": (0.17, 0.37),
-            "workspace_resample_object": True,
-            "workspace_object_xy_half_extent": 0.09,
-            "workspace_object_z_range": (0.025, 0.08),
-            "workspace_object_maximum_tilt": np.pi / 6,
-            "workspace_object_resample_interval": 64,
-            "workspace_collision_attempts": 512,
         },
     )
 
@@ -462,18 +374,6 @@ class ObjectPartiallyAssembledEEGraspedEventCfg(ResetStatesBaseEventCfg):
                 "pitch": (0.0, 0.0),
                 "yaw": (0.0, 0.0),
             },
-            "pose_override_profiles": {
-                "insertive_object": PHYSCODER_RESET_PROFILE,
-                "receptive_object": PHYSCODER_RESET_PROFILE,
-            },
-            "relative_position_offset_b": (0.0, 0.0, 0.158),
-            "relative_orientation_range_b": {
-                # Keep the shallow insertion nearly upright. Larger tilt
-                # sweeps the grasped wrist/fingers into the box walls.
-                "roll": (-np.pi / 72, np.pi / 72),
-                "pitch": (-np.pi / 72, np.pi / 72),
-                "yaw": (0.0, 0.0),
-            },
         },
     )
 
@@ -491,8 +391,8 @@ class ObjectPartiallyAssembledEEGraspedEventCfg(ResetStatesBaseEventCfg):
                 "x": (-0.01, 0.01),
                 "y": (-0.01, 0.01),
                 "z": (-0.01, 0.01),
-                "roll": (-np.pi / 64, np.pi / 64),
-                "pitch": (-np.pi / 64, np.pi / 64),
+                "roll": (-np.pi / 32, np.pi / 32),
+                "pitch": (-np.pi / 32, np.pi / 32),
                 "yaw": (-np.pi / 32, np.pi / 32),
             },
         },
@@ -540,7 +440,6 @@ class ResetStatesTerminationCfg:
             "max_object_pos_deviation": MISSING,
             "pos_z_threshold": -0.02,
             "consecutive_stability_steps": 5,
-            "debug_rejections": False,
         },
         time_out=True,
     )
@@ -560,9 +459,8 @@ class ResetStatesRewardsCfg:
     pass
 
 
-def make_insertive_object(usd_path: str, reset_profile: str = "default"):
-    return ResetProfileRigidObjectCfg(
-        reset_profile=reset_profile,
+def make_insertive_object(usd_path: str):
+    return RigidObjectCfg(
         prim_path="{ENV_REGEX_NS}/InsertiveObject",
         spawn=sim_utils.UsdFileCfg(
             usd_path=usd_path,
@@ -579,9 +477,8 @@ def make_insertive_object(usd_path: str, reset_profile: str = "default"):
     )
 
 
-def make_receptive_object(usd_path: str, reset_profile: str = "default"):
-    return ResetProfileRigidObjectCfg(
-        reset_profile=reset_profile,
+def make_receptive_object(usd_path: str):
+    return RigidObjectCfg(
         prim_path="{ENV_REGEX_NS}/ReceptiveObject",
         spawn=sim_utils.UsdFileCfg(
             usd_path=usd_path,
@@ -609,9 +506,7 @@ variants = {
         "cube": make_insertive_object(f"{UWLAB_CLOUD_ASSETS_DIR}/Props/Custom/InsertiveCube/insertive_cube.usd"),
         "rectangle": make_insertive_object(f"{UWLAB_CLOUD_ASSETS_DIR}/Props/Custom/Rectangle/rectangle.usd"),
         "block": make_insertive_object(f"{CORNERED_BLOCK_ASSET_DIR}/block/block.usd"),
-        "block_physcoder": make_insertive_object(
-            f"{CORNERED_BLOCK_ASSET_DIR}/block/block.usd", reset_profile=PHYSCODER_RESET_PROFILE
-        ),
+        "block_physcoder": make_insertive_object(f"{CORNERED_BLOCK_ASSET_DIR}/block/block.usd"),
     },
     "scene.receptive_object": {
         "fbtabletop": make_receptive_object(
@@ -625,9 +520,7 @@ variants = {
         "cube": make_receptive_object(f"{UWLAB_CLOUD_ASSETS_DIR}/Props/Custom/ReceptiveCube/receptive_cube.usd"),
         "wall": make_receptive_object(f"{UWLAB_CLOUD_ASSETS_DIR}/Props/Custom/Wall/wall.usd"),
         "box": make_receptive_object(f"{CORNERED_BLOCK_ASSET_DIR}/box/box.usd"),
-        "box_physcoder": make_receptive_object(
-            f"{CORNERED_BLOCK_ASSET_DIR}/box/box.usd", reset_profile=PHYSCODER_RESET_PROFILE
-        ),
+        "box_physcoder": make_receptive_object(f"{CORNERED_BLOCK_ASSET_DIR}/box/box.usd"),
     },
 }
 
@@ -711,17 +604,13 @@ class ObjectPartiallyAssembledEEAnywhereResetStatesCfg(UR5eRobotiq2f140ResetStat
         self.terminations.success.params["assembly_success_prob"] = 0.5
         self.terminations.success.params["assembly_threshold_scale"] = 1.5
 
-
 @configclass
 class ObjectPartiallyAssembledEEGraspedResetStatesCfg(UR5eRobotiq2f140ResetStatesCfg):
     events: ObjectPartiallyAssembledEEGraspedEventCfg = ObjectPartiallyAssembledEEGraspedEventCfg()
 
     def __post_init__(self):
         super().__post_init__()
-        # The grasped PhysCoder block settles by roughly 3--4 cm from its
-        # sampled shallow-insertion pose. Match the grasped-anywhere tolerance
-        # while retaining all stability, collision, and assembly checks.
-        self.terminations.success.params["max_object_pos_deviation"] = 0.05
+        self.terminations.success.params["max_object_pos_deviation"] = 0.025
         self.terminations.success.params["insertive_asset_cfg"] = SceneEntityCfg("insertive_object")
         self.terminations.success.params["receptive_asset_cfg"] = SceneEntityCfg("receptive_object")
         self.terminations.success.params["assembly_success_prob"] = 0.5

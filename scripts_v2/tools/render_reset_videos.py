@@ -209,7 +209,7 @@ def main(env_cfg, agent_cfg) -> None:
     grasp_event = None
     if task_name in {"ObjectAnywhereEEGrasped", "ObjectRestingEEGrasped"}:
         grasp_event = unwrapped.event_manager.get_term_cfg("reset_end_effector_pose_from_grasp_dataset").func
-    validate_in_box = bool(grasp_event is not None and grasp_event.workspace_filter_active)
+    validate_in_box = bool(grasp_event is not None and getattr(grasp_event, "workspace_filter_active", False))
     validation_rows = []
     dynamics_rows = []
     for video_index in range(args_cli.start_index, args_cli.start_index + args_cli.num_videos):
